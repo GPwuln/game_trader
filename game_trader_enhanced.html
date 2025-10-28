@@ -7304,43 +7304,172 @@
       isMobile: () => window.innerWidth <= 768,
       
       /**
-       * 性能优化：防抖函数
+       * 性能优化：增强的防抖函数
+       * @param {Function} func - 要防抖的函数
+       * @param {number} wait - 等待时间(毫秒)
+       * @param {boolean} immediate - 是否立即执行
+       * @returns {Function} 防抖后的函数，带有cancel和flush方法
        */
       debounce: (func, wait, immediate = false) => {
         let timeout;
-        return function executedFunction(...args) {
+        let result;
+
+        const debounced = function(...args) {
+          const context = this;
+
           const later = () => {
             timeout = null;
-            if (!immediate) func.apply(this, args);
+            if (!immediate) {
+              result = func.apply(context, args);
+            }
           };
+
           const callNow = immediate && !timeout;
           clearTimeout(timeout);
           timeout = setTimeout(later, wait);
-          if (callNow) func.apply(this, args);
-        };
-      },
-      
-      /**
-       * 性能优化：节流函数
-       */
-      throttle: (func, limit) => {
-        let inThrottle;
-        return function executedFunction(...args) {
-          if (!inThrottle) {
-            func.apply(this, args);
-            inThrottle = true;
-            setTimeout(() => inThrottle = false, limit);
+
+          if (callNow) {
+            result = func.apply(context, args);
           }
+
+          return result;
         };
+
+        // 取消防抖
+        debounced.cancel = () => {
+          clearTimeout(timeout);
+          timeout = null;
+        };
+
+        // 立即执行
+        debounced.flush = function(...args) {
+          if (timeout) {
+            clearTimeout(timeout);
+            timeout = null;
+            return func.apply(this, args);
+          }
+          return result;
+        };
+
+        return debounced;
+      },
+
+      /**
+       * 性能优化：增强的节流函数
+       * @param {Function} func - 要节流的函数
+       * @param {number} limit - 时间限制(毫秒)
+       * @param {Object} options - 配置选项 {leading: boolean, trailing: boolean}
+       * @returns {Function} 节流后的函数，带有cancel方法
+       */
+      throttle: (func, limit, options = {}) => {
+        let timeout;
+        let previous = 0;
+        let result;
+        const { leading = true, trailing = true } = options;
+
+        const throttled = function(...args) {
+          const context = this;
+          const now = Date.now();
+
+          if (!previous && !leading) previous = now;
+
+          const remaining = limit - (now - previous);
+
+          if (remaining <= 0 || remaining > limit) {
+            if (timeout) {
+              clearTimeout(timeout);
+              timeout = null;
+            }
+            previous = now;
+            result = func.apply(context, args);
+          } else if (!timeout && trailing) {
+            timeout = setTimeout(() => {
+              previous = leading ? Date.now() : 0;
+              timeout = null;
+              result = func.apply(context, args);
+            }, remaining);
+          }
+
+          return result;
+        };
+
+        // 取消节流
+        throttled.cancel = () => {
+          clearTimeout(timeout);
+          timeout = null;
+          previous = 0;
+        };
+
+        return throttled;
       },
       
       /**
        * 性能优化：批量DOM操作
+       * @param {Array<Function>} updates - 更新函数数组
+       * @param {boolean} useFragment - 是否使用DocumentFragment
        */
-      batchDOMUpdates: (updates) => {
-        requestAnimationFrame(() => {
-          updates.forEach(update => update());
-        });
+      batchDOMUpdates: (updates, useFragment = false) => {
+        if (useFragment && updates.length > 10) {
+          // 对于大量更新使用DocumentFragment
+          const fragment = document.createDocumentFragment();
+          requestAnimationFrame(() => {
+            updates.forEach(update => update(fragment));
+          });
+          return fragment;
+        } else {
+          // 普通批量更新
+          requestAnimationFrame(() => {
+            updates.forEach(update => update());
+          });
+        }
+      },
+
+      /**
+       * 性能优化：智能DOM查询缓存
+       */
+      createDOMCache: () => {
+        const cache = new Map();
+        const observer = new MutationObserver(() => cache.clear());
+
+        return {
+          get: (selector, context = document) => {
+            const key = `${selector}:${context === document ? 'doc' : 'ctx'}`;
+            if (!cache.has(key)) {
+              const element = context.querySelector(selector);
+              if (element) cache.set(key, element);
+              return element;
+            }
+            return cache.get(key);
+          },
+          getAll: (selector, context = document) => {
+            const key = `all:${selector}:${context === document ? 'doc' : 'ctx'}`;
+            if (!cache.has(key)) {
+              const elements = Array.from(context.querySelectorAll(selector));
+              cache.set(key, elements);
+              return elements;
+            }
+            return cache.get(key);
+          },
+          clear: () => cache.clear(),
+          observe: (target) => {
+            observer.observe(target, { childList: true, subtree: true });
+          },
+          disconnect: () => observer.disconnect()
+        };
+      },
+
+      /**
+       * 性能优化：事件委托助手
+       */
+      delegate: (parent, selector, eventType, handler, options = {}) => {
+        const listener = (event) => {
+          const target = event.target.closest(selector);
+          if (target && parent.contains(target)) {
+            handler.call(target, event, target);
+          }
+        };
+        parent.addEventListener(eventType, listener, options);
+        return () => parent.removeEventListener(eventType, listener, options);
       },
       
       /**
@@ -7355,6 +7484,128 @@
           container.children.length
         );
         return { start, end };
+      },
+
+      /**
+       * 性能优化：数组分块处理
+       * @param {Array} array - 要处理的数组
+       * @param {Function} processor - 处理函数
+       * @param {number} chunkSize - 每块大小
+       * @param {Function} onProgress - 进度回调
+       */
+      processInChunks: async (array, processor, chunkSize = 100, onProgress = null) => {
+        const results = [];
+        const totalChunks = Math.ceil(array.length / chunkSize);
+
+        for (let i = 0; i < array.length; i += chunkSize) {
+          const chunk = array.slice(i, i + chunkSize);
+          const chunkResults = await new Promise(resolve => {
+            requestAnimationFrame(() => {
+              const processed = chunk.map(processor);
+              resolve(processed);
+            });
+          });
+          results.push(...chunkResults);
+
+          if (onProgress) {
+            const progress = Math.min(100, Math.round(((i + chunkSize) / array.length) * 100));
+            onProgress(progress, Math.floor(i / chunkSize) + 1, totalChunks);
+          }
+        }
+
+        return results;
+      },
+
+      /**
+       * 性能优化：懒加载图片
+       */
+      lazyLoadImages: (selector = 'img[data-src]', options = {}) => {
+        const config = {
+          root: null,
+          rootMargin: '50px',
+          threshold: 0.01,
+          ...options
+        };
+
+        const imageObserver = new IntersectionObserver((entries, observer) => {
+          entries.forEach(entry => {
+            if (entry.isIntersecting) {
+              const img = entry.target;
+              const src = img.getAttribute('data-src');
+              if (src) {
+                img.src = src;
+                img.removeAttribute('data-src');
+                observer.unobserve(img);
+              }
+            }
+          });
+        }, config);
+
+        document.querySelectorAll(selector).forEach(img => imageObserver.observe(img));
+
+        return imageObserver;
+      },
+
+      /**
+       * 性能监控：测量函数执行时间
+       */
+      measurePerformance: (name, fn) => {
+        return async function(...args) {
+          const start = performance.now();
+          try {
+            const result = await fn.apply(this, args);
+            const duration = performance.now() - start;
+            console.log(`⚡ ${name}: ${duration.toFixed(2)}ms`);
+            return result;
+          } catch (error) {
+            const duration = performance.now() - start;
+            console.error(`❌ ${name} failed after ${duration.toFixed(2)}ms:`, error);
+            throw error;
+          }
+        };
+      },
+
+      /**
+       * 性能优化：内存监控
+       */
+      getMemoryInfo: () => {
+        if (performance.memory) {
+          const { usedJSHeapSize, totalJSHeapSize, jsHeapSizeLimit } = performance.memory;
+          return {
+            used: (usedJSHeapSize / 1048576).toFixed(2) + ' MB',
+            total: (totalJSHeapSize / 1048576).toFixed(2) + ' MB',
+            limit: (jsHeapSizeLimit / 1048576).toFixed(2) + ' MB',
+            usage: ((usedJSHeapSize / jsHeapSizeLimit) * 100).toFixed(2) + '%'
+          };
+        }
+        return null;
+      },
+
+      /**
+       * 性能优化：请求动画帧节流
+       */
+      rafThrottle: (fn) => {
+        let rafId = null;
+        let lastArgs = null;
+
+        const throttled = function(...args) {
+          lastArgs = args;
+          if (rafId === null) {
+            rafId = requestAnimationFrame(() => {
+              fn.apply(this, lastArgs);
+              rafId = null;
+            });
+          }
+        };
+
+        throttled.cancel = () => {
+          if (rafId !== null) {
+            cancelAnimationFrame(rafId);
+            rafId = null;
+          }
+        };
+
+        return throttled;
       },
       
       getItemIcon(item) {
@@ -8393,7 +8644,6 @@
         this.input = inputElement;
         this.callbacks = callbacks;
         this.state = {
-          searchTimeout: null,
           inputCount: 0,
           lastInputTime: 0,
           isTypingFast: false,
@@ -8407,105 +8657,142 @@
           normalSearchDelay: 200, // 正常搜索延迟(ms)
           fastSearchDelay: 400 // 快速搜索延迟(ms)
         };
-      }
-      
-      bindEvents() {
-        this.input.addEventListener('input', this.handleInput.bind(this));
-        this.input.addEventListener('keydown', this.handleKeydown.bind(this));
-        this.input.addEventListener('paste', this.handlePaste.bind(this));
-      }
-      
-      handleInput(e) {
-        const currentTime = Date.now();
-        const keyword = e.target.value.trim();
-        
-        // 检测快速输入
-        this.detectFastInput(currentTime);
-        
-        // 更新状态
-        this.state.lastInputTime = currentTime;
-        
-        // 重置计数器
-        this.scheduleReset();
-        
-        // 清空搜索检测
-        if (keyword === '' && this.state.lastKeyword !== '') {
-          this.callbacks.onAnimation('shake');
-        }
-        
-        // 执行搜索
-        this.scheduleSearch(keyword);
-        
-        this.state.lastKeyword = keyword;
-      }
-      
-      handleKeydown(e) {
-        if (e.key === 'Enter') {
-          e.preventDefault();
-          this.executeImmediateSearch();
-        }
-      }
-      
-      handlePaste(e) {
-        setTimeout(() => {
-          this.callbacks.onAnimation('pulse');
-        }, 10);
-      }
-      
-      detectFastInput(currentTime) {
-        this.state.inputCount++;
-        
-        if (currentTime - this.state.lastInputTime < this.config.fastInputThreshold) {
-          this.state.isTypingFast = true;
-          this.callbacks.onAnimation('pulse');
-        } else if (this.state.inputCount > this.config.burstInputCount && 
-                   currentTime - this.state.lastInputTime < this.config.burstInputThreshold) {
-          this.state.isTypingFast = true;
-          this.callbacks.onAnimation('warning');
-        } else {
-          this.state.isTypingFast = false;
-        }
-      }
-      
-      scheduleReset() {
-        setTimeout(() => {
+
+        // 使用优化的防抖函数
+        this.debouncedSearch = Utils.debounce((keyword) => {
+          this.callbacks.onSearch(keyword);
+          if (this.state.isTypingFast) {
+            this.callbacks.onAnimation('shake');
+          }
+        }, this.config.normalSearchDelay);
+
+        this.fastDebouncedSearch = Utils.debounce((keyword) => {
+          this.callbacks.onSearch(keyword);
+        }, this.config.fastSearchDelay);
+
+        // 绑定处理器（保持this上下文）
+        this._handleInput = this.handleInput.bind(this);
+        this._handleKeydown = this.handleKeydown.bind(this);
+        this._handlePaste = this.handlePaste.bind(this);
+
+        // 使用节流的重置函数
+        this.throttledReset = Utils.throttle(() => {
           if (Date.now() - this.state.lastInputTime > this.config.resetDelay) {
             this.state.inputCount = 0;
             this.state.isTypingFast = false;
           }
         }, this.config.resetDelay);
       }
-      
-      scheduleSearch(keyword) {
-        clearTimeout(this.state.searchTimeout);
-        
-        if (keyword === this.state.lastKeyword) return;
-        
-        const searchDelay = this.state.isTypingFast ? 
-          this.config.fastSearchDelay : 
-          this.config.normalSearchDelay;
-        
-        this.state.searchTimeout = setTimeout(() => {
-          this.callbacks.onSearch(keyword);
-          
-          if (this.state.isTypingFast) {
-            this.callbacks.onAnimation('shake');
-          }
-        }, searchDelay);
+
+      bindEvents() {
+        this.input.addEventListener('input', this._handleInput, { passive: true });
+        this.input.addEventListener('keydown', this._handleKeydown);
+        this.input.addEventListener('paste', this._handlePaste, { passive: true });
       }
-      
+
+      handleInput(e) {
+        const currentTime = Date.now();
+        const keyword = e.target.value.trim();
+
+        // 检测快速输入
+        this.detectFastInput(currentTime);
+
+        // 更新状态
+        this.state.lastInputTime = currentTime;
+
+        // 重置计数器（使用节流）
+        this.throttledReset();
+
+        // 清空搜索检测
+        if (keyword === '' && this.state.lastKeyword !== '') {
+          this.callbacks.onAnimation('shake');
+        }
+
+        // 执行搜索（根据输入速度选择不同的防抖）
+        if (keyword !== this.state.lastKeyword) {
+          if (this.state.isTypingFast) {
+            this.debouncedSearch.cancel();
+            this.fastDebouncedSearch(keyword);
+          } else {
+            this.fastDebouncedSearch.cancel();
+            this.debouncedSearch(keyword);
+          }
+        }
+
+        this.state.lastKeyword = keyword;
+      }
+
+      handleKeydown(e) {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          this.executeImmediateSearch();
+        } else if (e.key === 'Escape') {
+          // ESC键清空搜索
+          this.input.value = '';
+          this.executeImmediateSearch();
+        }
+      }
+
+      handlePaste(e) {
+        // 使用requestAnimationFrame优化粘贴动画
+        requestAnimationFrame(() => {
+          this.callbacks.onAnimation('pulse');
+        });
+      }
+
+      detectFastInput(currentTime) {
+        this.state.inputCount++;
+        const timeDiff = currentTime - this.state.lastInputTime;
+
+        if (timeDiff < this.config.fastInputThreshold) {
+          this.state.isTypingFast = true;
+          this.callbacks.onAnimation('pulse');
+        } else if (this.state.inputCount > this.config.burstInputCount &&
+                   timeDiff < this.config.burstInputThreshold) {
+          this.state.isTypingFast = true;
+          this.callbacks.onAnimation('warning');
+        } else {
+          this.state.isTypingFast = false;
+        }
+      }
+
       executeImmediateSearch() {
-        clearTimeout(this.state.searchTimeout);
+        // 取消所有待处理的搜索
+        this.debouncedSearch.cancel();
+        this.fastDebouncedSearch.cancel();
+
         const keyword = this.input.value.trim();
         this.callbacks.onSearch(keyword);
         this.callbacks.onAnimation('shake');
       }
-      
+
+      // 清空搜索
+      clear() {
+        this.input.value = '';
+        this.state.lastKeyword = '';
+        this.executeImmediateSearch();
+      }
+
+      // 设置搜索关键词
+      setKeyword(keyword) {
+        this.input.value = keyword;
+        this.executeImmediateSearch();
+      }
+
       destroy() {
-        clearTimeout(this.state.searchTimeout);
-        this.input.removeEventListener('input', this.handleInput);
-        this.input.removeEventListener('keydown', this.handleKeydown);
-        this.input.removeEventListener('paste', this.handlePaste);
+        // 取消所有待处理的操作
+        this.debouncedSearch.cancel();
+        this.fastDebouncedSearch.cancel();
+        this.throttledReset.cancel();
+
+        // 移除事件监听器
+        this.input.removeEventListener('input', this._handleInput);
+        this.input.removeEventListener('keydown', this._handleKeydown);
+        this.input.removeEventListener('paste', this._handlePaste);
+
+        // 清空引用
+        this.input = null;
+        this.callbacks = null;
       }
     }
 
@@ -8513,35 +8800,62 @@
       constructor(state) {
         this.state = state;
         this.currentUserId = '1'; // 当前用户ID，默认为1
-        this.elements = {
-          itemList: document.getElementById('itemList'),
-          categoryMenu: document.getElementById('categoryMenu'),
-          categoryLabel: document.getElementById('categoryLabel'),
-          categoryBtn: document.getElementById('categoryBtn'),
-          searchInput: document.getElementById('searchInput'),
-          modalRoot: document.getElementById('modalRoot'),
-          modalBox: document.getElementById('modalBox'),
-          pagination: document.getElementById('pagination'),
-          paginationInfo: document.getElementById('paginationInfo'),
-          paginationPages: document.getElementById('paginationPages'),
-          firstPageBtn: document.getElementById('firstPageBtn'),
-          prevPageBtn: document.getElementById('prevPageBtn'),
-          nextPageBtn: document.getElementById('nextPageBtn'),
-          lastPageBtn: document.getElementById('lastPageBtn'),
-          pageSizeSelect: document.getElementById('pageSizeSelect')
-        };
+
+        // 使用批量DOM查询优化初始化
+        this._initializeElements();
+
         this.toast = new ToastManager();
         this.iconCache = new Map(); // 图标加载缓存
         this.loadingQueue = []; // 图标加载队列
         this.maxConcurrentLoads = 6; // 最大并发加载数
         this.currentLoads = 0; // 当前加载数
-        this.preloadCommonIcons(); // 预加载常用图标
-        
-        // 定期清理缓存（每10分钟）
-        setInterval(() => {
-          this.cleanIconCache();
-        }, 10 * 60 * 1000);
-        
+
+        // 创建DOM缓存
+        this.domCache = Utils.createDOMCache();
+
+        // 预加载常用图标
+        this.preloadCommonIcons();
+
+        // 使用节流的缓存清理（每10分钟）
+        this.cacheCleanupInterval = setInterval(
+          Utils.throttle(() => {
+            this.cleanIconCache();
+            this.domCache.clear();
+          }, 60000),
+          10 * 60 * 1000
+        );
+      }
+
+      // 优化的元素初始化方法
+      _initializeElements() {
+        // 使用对象解构和单次批量查询
+        const elementIds = [
+          'itemList', 'categoryMenu', 'categoryLabel', 'categoryBtn',
+          'searchInput', 'modalRoot', 'modalBox', 'pagination',
+          'paginationInfo', 'paginationPages', 'firstPageBtn',
+          'prevPageBtn', 'nextPageBtn', 'lastPageBtn', 'pageSizeSelect'
+        ];
+
+        this.elements = {};
+
+        // 批量获取元素（减少DOM访问次数）
+        requestAnimationFrame(() => {
+          elementIds.forEach(id => {
+            this.elements[id] = document.getElementById(id);
+          });
+        });
+
+        // 立即返回一个Proxy，延迟获取元素直到真正需要时
+        const elementsProxy = new Proxy({}, {
+          get: (target, prop) => {
+            if (!target[prop] && elementIds.includes(prop)) {
+              target[prop] = document.getElementById(prop);
+            }
+            return target[prop];
+          }
+        });
+
+        this.elements = elementsProxy;
       }
 
       openModal(html, wide = false) {
