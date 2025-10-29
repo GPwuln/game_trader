@@ -8416,6 +8416,136 @@
         console.log('✅ 批量保存完成');
         return true;
       }
+
+      /**
+       * 删除道具（级联删除所有相关数据）
+       */
+      async deleteItem(itemId) {
+        console.log(`🗑️ 开始删除道具 ID=${itemId}，级联删除所有相关数据...`);
+
+        try {
+          // 1. 删除 items 表中的道具
+          await this.delete(CONFIG.STORE_ITEMS, itemId);
+
+          // 2. 删除 user_holdings 表中的所有持仓记录
+          const holdings = await this.getByIndex(CONFIG.STORE_HOLDINGS, 'itemId', itemId);
+          for (const holding of holdings) {
+            await this.delete(CONFIG.STORE_HOLDINGS, holding.holdingId);
+          }
+
+          // 3. 删除 price_history 表中的所有价格历史
+          const priceHistory = await this.getByIndex(CONFIG.STORE_PRICE_HISTORY, 'itemId', itemId);
+          for (const history of priceHistory) {
+            await this.delete(CONFIG.STORE_PRICE_HISTORY, history.historyId);
+          }
+
+          // 4. 删除 records 表中的所有相关记录
+          const records = await this.getByIndex(CONFIG.STORE_RECORDS, 'itemId', itemId);
+          for (const record of records) {
+            await this.delete(CONFIG.STORE_RECORDS, record.recordId);
+          }
+
+          console.log(`✅ 道具 ID=${itemId} 及所有相关数据删除完成`);
+          return true;
+        } catch (err) {
+          console.error(`❌ 删除道具 ID=${itemId} 失败:`, err);
+          throw err;
+        }
+      }
+
+      /**
+       * 保存交易记录
+       */
+      async saveRecord(record) {
+        const recordId = `${record.uId}#${Date.now()}#${Math.random().toString(36).substr(2, 9)}`;
+
+        const recordData = {
+          recordId,
+          uId: record.uId || this.currentUserId,
+          itemId: record.itemId,
+          itemName: record.itemName,
+          opType: record.opType, // 'buy', 'sell', 'price_update', 'adjust'
+          quantity: record.quantity || 0,
+          price: record.price || 0,
+          totalAmount: record.totalAmount || 0,
+          beforeStock: record.beforeStock || 0,
+          afterStock: record.afterStock || 0,
+          note: record.note || '',
+          timestamp: Date.now(),
+          metadata: record.metadata || {}
+        };
+
+        await this.add(CONFIG.STORE_RECORDS, recordData);
+        console.log(`📝 交易记录已保存:`, recordData.opType, recordData.itemName);
+        return recordId;
+      }
+
+      /**
+       * 更新用户统计数据
+       */
+      async updateUserStats(userId = null) {
+        const uId = userId || this.currentUserId;
+        console.log(`📊 更新用户 ${uId} 的统计数据...`);
+
+        try {
+          // 获取用户所有持仓
+          const holdings = await this.getByIndex(CONFIG.STORE_HOLDINGS, 'uId', uId);
+
+          // 计算总持仓价值、总成本、总盈亏
+          let totalValue = 0;
+          let totalCost = 0;
+          let totalProfit = 0;
+          let itemCount = holdings.length;
+
+          for (const holding of holdings) {
+            // 获取当前市场价格
+            const item = await this.get(CONFIG.STORE_ITEMS, holding.itemId);
+            if (item && holding.currentStock > 0) {
+              const currentValue = holding.currentStock * item.price;
+              const cost = holding.currentStock * (holding.averageCost || 0);
+              totalValue += currentValue;
+              totalCost += cost;
+              totalProfit += (currentValue - cost);
+            }
+          }
+
+          // 获取交易记录统计
+          const records = await this.getByIndex(CONFIG.STORE_RECORDS, 'uId', uId);
+          const buyCount = records.filter(r => r.opType === 'buy').length;
+          const sellCount = records.filter(r => r.opType === 'sell').length;
+
+          // 保存统计数据
+          const statsId = `${uId}#STATS`;
+          const stats = {
+            statsId,
+            uId,
+            totalValue,
+            totalCost,
+            totalProfit,
+            profitRate: totalCost > 0 ? (totalProfit / totalCost) * 100 : 0,
+            itemCount,
+            buyCount,
+            sellCount,
+            lastUpdated: Date.now()
+          };
+
+          await this.put(CONFIG.STORE_USER_STATS, stats);
+          console.log(`✅ 用户统计数据更新完成:`, stats);
+          return stats;
+        } catch (err) {
+          console.error(`❌ 更新用户统计失败:`, err);
+          throw err;
+        }
+      }
+
+      /**
+       * 获取用户统计数据
+       */
+      async getUserStats(userId = null) {
+        const uId = userId || this.currentUserId;
+        const statsId = `${uId}#STATS`;
+        return await this.get(CONFIG.STORE_USER_STATS, statsId);
+      }
     }
 
     class AppState {
@@ -10864,7 +10994,7 @@
           '#newPrice': { keypress: (e) => e.key === 'Enter' && this.addPriceHandler(item, modal)() },
           '#deleteItem': { click: async () => {
             const confirmed = await this.showConfirmDialog(
-              `确定要删除道具"${item.name}"吗？\n\n此操作不可恢复！`,
+              `确定要删除道具"${item.name}"吗？\n\n此操作将删除所有相关数据（持仓、历史价格、交易记录等），不可恢复！`,
               '删除道具',
               '删除',
               '取消'
@@ -10872,14 +11002,27 @@
             if (confirmed) {
               // 立即关闭模态框，避免在点击处理器中执行耗时操作
               this.closeItemDetailModal(modal);
-              
+
               // 使用 setTimeout 将耗时操作延迟到下一个事件循环
               setTimeout(async () => {
-              this.state.data = this.state.data.filter(it => it !== item);
-                await this.state.saveData();
-              this.showToast('道具已删除', '🗑️', 'success', item);
-              this.renderCategories();
-              this.renderList(this.elements.searchInput.value.trim());
+                try {
+                  // 使用新的级联删除方法
+                  await this.state.db.deleteItem(item.id);
+
+                  // 从内存中移除
+                  this.state.data = this.state.data.filter(it => it !== item);
+                  this.state.dataMap.delete(item.name);
+
+                  // 更新用户统计
+                  await this.state.db.updateUserStats();
+
+                  this.showToast('道具已删除', '🗑️', 'success', item);
+                  this.renderCategories();
+                  this.renderList(this.elements.searchInput.value.trim());
+                } catch (err) {
+                  console.error('删除道具失败:', err);
+                  this.showToast('删除失败: ' + err.message, '❌', 'error');
+                }
               }, 0);
             }
           }}
@@ -10926,7 +11069,7 @@
           item.price = newPrice;
           item.history = item.history || [];
           item.history.push({close: newPrice, date: Utils.getCurrentDateTime()});
-          
+
           // 记录价格变动到操作历史
           if (oldPrice !== newPrice) {
             if (!item.inventory) {
@@ -10937,7 +11080,7 @@
                 operationHistory: []
               };
             }
-            
+
             const priceChangeRecord = {
               type: 'price_change',
               timestamp: new Date().toISOString(),
@@ -10946,16 +11089,38 @@
               change: newPrice - oldPrice,
               changePercent: oldPrice > 0 ? ((newPrice - oldPrice) / oldPrice * 100).toFixed(2) : 0
             };
-            
+
             item.inventory.operationHistory.push(priceChangeRecord);
+
+            // 保存价格变动记录到 records 表
+            await this.state.db.saveRecord({
+              itemId: item.id,
+              itemName: item.name,
+              opType: 'price_update',
+              quantity: 0,
+              price: newPrice,
+              totalAmount: 0,
+              beforeStock: item.inventory.currentStock,
+              afterStock: item.inventory.currentStock,
+              note: `价格更新: ¥${oldPrice} → ¥${newPrice} (${priceChangeRecord.changePercent}%)`,
+              metadata: {
+                oldPrice: oldPrice,
+                newPrice: newPrice,
+                change: newPrice - oldPrice,
+                changePercent: priceChangeRecord.changePercent
+              }
+            });
+
+            // 更新用户统计（价格变化会影响持仓价值）
+            await this.state.db.updateUserStats();
           }
-          
-          this.state.saveItemQuick(item);
+
+          await this.state.saveItemQuick(item);
           this.showToast('金额已更新', '💰', 'success', item);
-          
+
           // 更新价格统计信息
           this.updatePriceStats(item);
-          
+
           this.closeItemDetailModal(modal);
           this.updateItemCard(item);
         } catch (error) {
@@ -14765,15 +14930,16 @@
         this.bindAIEvents(item, modal);
       }
       
-      buyStock(item, quantity, modal) {
+      async buyStock(item, quantity, modal) {
         const currentPrice = item.price;
         const totalCost = currentPrice * quantity;
-        
+        const beforeStock = item.inventory.currentStock;
+
         // 更新库存数据
         item.inventory.currentStock += quantity;
         item.inventory.totalInvestment += totalCost;
         item.inventory.averageCost = item.inventory.totalInvestment / item.inventory.currentStock;
-        
+
         // 添加操作记录
         const operation = {
           type: 'buy',
@@ -14783,42 +14949,59 @@
           timestamp: new Date(),
           stockAfter: item.inventory.currentStock
         };
-        
+
         item.inventory.operationHistory.unshift(operation);
-        
+
         // 清除预生成的图表数据，强制使用实时历史记录
         if (item.inventory.chartData) {
           console.log('🗑️ 清除预生成的图表数据，强制使用实时历史记录');
           delete item.inventory.chartData;
         }
-        
+
         // 更新显示
         this.updateInventoryDisplay(item, modal);
         this.updateSmartSuggestions(item, modal);
-        
+
         // 更新图表
         this.updateInventoryChartAfterOperation(item, modal);
         // 更新历史记录（如果存在）
         this.updateHistoryDisplay(item, modal);
-        
+
         // 显示成功提示
         this.toast.setCurrentItem(item);
         this.toast.success(`成功购入 ${quantity} 件！库存 +${quantity}`, '📦');
-        
+
         // 清空输入框
         const quantityInput = modal.querySelector('#stockQuantity');
         if (quantityInput) {
           quantityInput.value = '';
         }
-        
+
         // 保存数据
-        this.state.saveItemQuick(item);
+        await this.state.saveItemQuick(item);
+
+        // 保存交易记录到 records 表
+        await this.state.db.saveRecord({
+          itemId: item.id,
+          itemName: item.name,
+          opType: 'buy',
+          quantity: quantity,
+          price: currentPrice,
+          totalAmount: totalCost,
+          beforeStock: beforeStock,
+          afterStock: item.inventory.currentStock,
+          note: `购入${quantity}件，单价¥${currentPrice}`
+        });
+
+        // 更新用户统计
+        await this.state.db.updateUserStats();
       }
       
-      sellStock(item, quantity, modal) {
+      async sellStock(item, quantity, modal) {
         const currentPrice = item.price;
         const totalRevenue = currentPrice * quantity;
-        
+        const beforeStock = item.inventory.currentStock;
+
         // 更新库存数据
         item.inventory.currentStock -= quantity;
         if (item.inventory.currentStock > 0) {
@@ -14827,7 +15010,7 @@
           item.inventory.totalInvestment = 0;
           item.inventory.averageCost = 0;
         }
-        
+
         // 添加操作记录
         const operation = {
           type: 'sell',
@@ -14837,19 +15020,19 @@
           timestamp: new Date(),
           stockAfter: item.inventory.currentStock
         };
-        
+
         item.inventory.operationHistory.unshift(operation);
-        
+
         // 清除预生成的图表数据，强制使用实时历史记录
         if (item.inventory.chartData) {
           console.log('🗑️ 清除预生成的图表数据，强制使用实时历史记录');
           delete item.inventory.chartData;
         }
-        
+
         // 更新显示
         this.updateInventoryDisplay(item, modal);
         this.updateSmartSuggestions(item, modal);
-        
+
         // 更新图表
         this.updateInventoryChartAfterOperation(item, modal);
         // 更新历史记录（如果存在）
@@ -14857,15 +15040,31 @@
         // 显示成功提示
         this.toast.setCurrentItem(item);
         this.toast.success(`卖出 ${quantity} 件！库存 -${quantity}`, '💰');
-        
+
         // 清空输入框
         const quantityInput = modal.querySelector('#stockQuantity');
         if (quantityInput) {
           quantityInput.value = '';
         }
-        
+
         // 保存数据
-        this.state.saveItemQuick(item);
+        await this.state.saveItemQuick(item);
+
+        // 保存交易记录到 records 表
+        await this.state.db.saveRecord({
+          itemId: item.id,
+          itemName: item.name,
+          opType: 'sell',
+          quantity: quantity,
+          price: currentPrice,
+          totalAmount: totalRevenue,
+          beforeStock: beforeStock,
+          afterStock: item.inventory.currentStock,
+          note: `卖出${quantity}件，单价¥${currentPrice}`
+        });
+
+        // 更新用户统计
+        await this.state.db.updateUserStats();
       }
       
       updateInventoryDisplay(item, modal) {
