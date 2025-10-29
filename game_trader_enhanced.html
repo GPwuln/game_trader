@@ -7249,11 +7249,21 @@
     const CONFIG = {
       // 数据库配置
       DB_NAME: 'GameItemsDB',           // 数据库名称
-      DB_VERSION: 4,                    // 数据库版本号
-      STORE_ITEMS: 'items',             // 道具数据存储表
-      STORE_CONFIG: 'config',           // 配置数据存储表
-      STORE_PINYIN: 'pinyin_cache',     // 拼音缓存存储表
-      
+      DB_VERSION: 5,                    // 数据库版本号（升级到5以支持8表结构）
+
+      // 8表结构定义
+      STORE_USERS: 'users',             // 用户表
+      STORE_ITEMS: 'items',             // 道具全局市场数据表
+      STORE_HOLDINGS: 'user_holdings',  // 用户持仓表
+      STORE_RECORDS: 'records',         // 交易记录表
+      STORE_PRICE_HISTORY: 'price_history', // 价格历史表
+      STORE_USER_STATS: 'user_stats',   // 用户统计表
+      STORE_PINYIN: 'pinyin_cache',     // 拼音缓存表
+      STORE_CONFIG: 'config',           // 系统配置表
+
+      // 当前用户ID（默认用户）
+      DEFAULT_USER_ID: 'U_DEFAULT_001',
+
       // 默认分类配置
       DEFAULT_CATEGORIES: [
         { name: "材料", subs: ["普通材料", "稀有材料", "传说材料"] },
@@ -8141,54 +8151,118 @@
 
     // ==================== 数据库管理器 ====================
     class DatabaseManager {
-      constructor() { 
-        this.db = null; 
+      constructor() {
+        this.db = null;
+        this.currentUserId = CONFIG.DEFAULT_USER_ID; // 当前用户ID
       }
 
       /**
-       * 初始化数据库连接
+       * 初始化数据库连接 - 支持8表结构
        */
       async init() {
         return new Promise((resolve, reject) => {
           const request = indexedDB.open(CONFIG.DB_NAME, CONFIG.DB_VERSION);
           request.onerror = () => reject(request.error);
-          request.onsuccess = () => { 
-            this.db = request.result; 
-            resolve(this.db); 
+          request.onsuccess = () => {
+            this.db = request.result;
+            console.log('✅ 数据库初始化成功 - 8表架构');
+            resolve(this.db);
           };
-          request.onupgradeneeded = (event) => this._createStores(event.target.result);
+          request.onupgradeneeded = (event) => {
+            console.log(`🔄 数据库升级: ${event.oldVersion} → ${event.newVersion}`);
+            this._createStores(event.target.result, event.oldVersion);
+          };
         });
       }
 
       /**
-       * 创建数据库存储表
+       * 创建8表数据库结构
        */
-      _createStores(db) {
-            const stores = [
-          { 
-            name: CONFIG.STORE_ITEMS, 
-            keyPath: 'id', 
-            autoIncrement: true, 
-            indexes: [
-              { name: 'name', keyPath: 'name', unique: true }, 
-              { name: 'category', keyPath: 'category', unique: false },
-              { name: 'isFavorite', keyPath: 'isFavorite', unique: false }
-            ] 
-          },
-              { name: CONFIG.STORE_CONFIG, keyPath: 'key' },
-              { name: CONFIG.STORE_PINYIN, keyPath: 'name' }
-            ];
-        
-            stores.forEach(({ name, keyPath, autoIncrement, indexes }) => {
-              if (!db.objectStoreNames.contains(name)) {
-                const store = db.createObjectStore(name, { keyPath, autoIncrement });
-                indexes?.forEach(idx => store.createIndex(idx.name, idx.keyPath, { unique: idx.unique }));
-              }
-        });
+      _createStores(db, oldVersion) {
+        // 1. users 表
+        if (!db.objectStoreNames.contains(CONFIG.STORE_USERS)) {
+          const usersStore = db.createObjectStore(CONFIG.STORE_USERS, { keyPath: 'uId' });
+          usersStore.createIndex('username', 'username', { unique: true });
+          usersStore.createIndex('email', 'email', { unique: false });
+          usersStore.createIndex('createdAt', 'createdAt', { unique: false });
+          console.log('✅ 创建 users 表');
+        }
+
+        // 2. items 表（全局道具市场数据）
+        if (!db.objectStoreNames.contains(CONFIG.STORE_ITEMS)) {
+          const itemsStore = db.createObjectStore(CONFIG.STORE_ITEMS, { keyPath: 'id', autoIncrement: true });
+          itemsStore.createIndex('name', 'name', { unique: true });
+          itemsStore.createIndex('category', 'category', { unique: false });
+          itemsStore.createIndex('subCategory', 'subCategory', { unique: false });
+          itemsStore.createIndex('price', 'price', { unique: false });
+          itemsStore.createIndex('marketTrend', 'marketTrend', { unique: false });
+          itemsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+          console.log('✅ 创建 items 表');
+        } else if (oldVersion < 5) {
+          // 如果是从旧版本升级，需要添加新索引
+          const transaction = db.transaction || event.target.transaction;
+          const itemsStore = transaction.objectStore(CONFIG.STORE_ITEMS);
+          if (!itemsStore.indexNames.contains('marketTrend')) {
+            itemsStore.createIndex('marketTrend', 'marketTrend', { unique: false });
+          }
+        }
+
+        // 3. user_holdings 表（用户持仓）
+        if (!db.objectStoreNames.contains(CONFIG.STORE_HOLDINGS)) {
+          const holdingsStore = db.createObjectStore(CONFIG.STORE_HOLDINGS, { keyPath: 'holdingId' });
+          holdingsStore.createIndex('uId', 'uId', { unique: false });
+          holdingsStore.createIndex('itemId', 'itemId', { unique: false });
+          holdingsStore.createIndex('profitRate', 'profitRate', { unique: false });
+          holdingsStore.createIndex('synced', 'synced', { unique: false });
+          console.log('✅ 创建 user_holdings 表');
+        }
+
+        // 4. records 表（交易记录）
+        if (!db.objectStoreNames.contains(CONFIG.STORE_RECORDS)) {
+          const recordsStore = db.createObjectStore(CONFIG.STORE_RECORDS, { keyPath: 'id', autoIncrement: true });
+          recordsStore.createIndex('uId', 'uId', { unique: false });
+          recordsStore.createIndex('itemId', 'itemId', { unique: false });
+          recordsStore.createIndex('type', 'type', { unique: false });
+          recordsStore.createIndex('timestamp', 'timestamp', { unique: false });
+          console.log('✅ 创建 records 表');
+        }
+
+        // 5. price_history 表（价格历史）
+        if (!db.objectStoreNames.contains(CONFIG.STORE_PRICE_HISTORY)) {
+          const priceHistoryStore = db.createObjectStore(CONFIG.STORE_PRICE_HISTORY, { keyPath: 'id', autoIncrement: true });
+          priceHistoryStore.createIndex('itemId', 'itemId', { unique: false });
+          priceHistoryStore.createIndex('date', 'date', { unique: false });
+          priceHistoryStore.createIndex('price', 'price', { unique: false });
+          console.log('✅ 创建 price_history 表');
+        }
+
+        // 6. user_stats 表（用户统计）
+        if (!db.objectStoreNames.contains(CONFIG.STORE_USER_STATS)) {
+          const userStatsStore = db.createObjectStore(CONFIG.STORE_USER_STATS, { keyPath: 'uId' });
+          userStatsStore.createIndex('profitRate', 'profitRate', { unique: false });
+          userStatsStore.createIndex('totalInvestment', 'totalInvestment', { unique: false });
+          userStatsStore.createIndex('activeDays', 'activeDays', { unique: false });
+          console.log('✅ 创建 user_stats 表');
+        }
+
+        // 7. pinyin_cache 表
+        if (!db.objectStoreNames.contains(CONFIG.STORE_PINYIN)) {
+          const pinyinStore = db.createObjectStore(CONFIG.STORE_PINYIN, { keyPath: 'name' });
+          pinyinStore.createIndex('pinyin', 'pinyin', { unique: false });
+          pinyinStore.createIndex('initials', 'initials', { unique: false });
+          console.log('✅ 创建 pinyin_cache 表');
+        }
+
+        // 8. config 表
+        if (!db.objectStoreNames.contains(CONFIG.STORE_CONFIG)) {
+          const configStore = db.createObjectStore(CONFIG.STORE_CONFIG, { keyPath: 'key' });
+          configStore.createIndex('category', 'category', { unique: false });
+          console.log('✅ 创建 config 表');
+        }
       }
 
       /**
-       * 执行数据库请求的通用方法
+       * 通用数据库请求执行方法
        */
       async _executeRequest(storeName, mode, operation) {
         const transaction = this.db.transaction([storeName], mode);
@@ -8200,39 +8274,147 @@
         });
       }
 
-      // 基础CRUD操作
-      async get(storeName, key) { 
-        return this._executeRequest(storeName, 'readonly', store => store.get(key)); 
+      // ==================== 基础CRUD操作 ====================
+
+      async get(storeName, key) {
+        return this._executeRequest(storeName, 'readonly', store => store.get(key));
       }
-      
-      async getAll(storeName) { 
+
+      async getAll(storeName) {
         return this._executeRequest(storeName, 'readonly', store => store.getAll())
-          .then(result => result || []); 
+          .then(result => result || []);
       }
-      
-      async put(storeName, value) { 
-        return this._executeRequest(storeName, 'readwrite', store => store.put(value)); 
+
+      async put(storeName, value) {
+        return this._executeRequest(storeName, 'readwrite', store => store.put(value));
       }
-      
-      async saveItem(item) { 
-        return this.put(CONFIG.STORE_ITEMS, item); 
+
+      async add(storeName, value) {
+        return this._executeRequest(storeName, 'readwrite', store => store.add(value));
+      }
+
+      async delete(storeName, key) {
+        return this._executeRequest(storeName, 'readwrite', store => store.delete(key));
+      }
+
+      async getByIndex(storeName, indexName, value) {
+        const transaction = this.db.transaction([storeName], 'readonly');
+        const store = transaction.objectStore(storeName);
+        const index = store.index(indexName);
+        return new Promise((resolve, reject) => {
+          const request = index.getAll(value);
+          request.onsuccess = () => resolve(request.result || []);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      // ==================== 道具相关操作 ====================
+
+      /**
+       * 保存道具（兼容旧接口）
+       */
+      async saveItem(item) {
+        // 将旧格式的item数据拆分保存到新的8表结构
+
+        const itemId = item.id || await this._getNextItemId();
+
+        // 1. 保存到items表（全局市场数据）
+        const itemData = {
+          id: itemId,
+          name: item.name,
+          price: item.price || 0,
+          basePrice: item.basePrice || item.price || 0,
+          marketTrend: this._calculateTrend(item.history || []),
+          category: item.category || '未分类',
+          subCategory: item.subCategory || '',
+          icon: item.icon || '',
+          rarityLevel: item.rarityLevel || '普通',
+          isFavorite: item.isFavorite || false,
+          supply: 0,
+          demand: 0,
+          totalTransactions: (item.history || []).length,
+          createdAt: item.createdAt || Date.now(),
+          updatedAt: Date.now(),
+          priceUpdatedAt: Date.now()
+        };
+        await this.put(CONFIG.STORE_ITEMS, itemData);
+
+        // 2. 保存持仓到user_holdings表
+        if (item.stock !== undefined && item.stock > 0) {
+          const holdingId = `${this.currentUserId}#${itemId}`;
+          const holding = {
+            holdingId,
+            uId: this.currentUserId,
+            itemId,
+            batches: item.batches || [],
+            currentStock: item.stock,
+            lockedStock: 0,
+            totalInvestment: item.totalInvestment || 0,
+            totalRevenue: 0,
+            averageCost: item.averageCost || 0,
+            averageSellPrice: 0,
+            profit: 0,
+            unrealizedProfit: 0,
+            profitRate: 0,
+            lastOperation: 'update',
+            lastUpdated: Date.now(),
+            version: 1,
+            synced: false,
+            lastSyncTime: 0
+          };
+          await this.put(CONFIG.STORE_HOLDINGS, holding);
+        }
+
+        // 3. 保存历史记录到price_history和records表
+        if (item.history && item.history.length > 0) {
+          for (const h of item.history) {
+            // 保存到price_history
+            await this.add(CONFIG.STORE_PRICE_HISTORY, {
+              itemId,
+              date: h.date,
+              open: h.open || h.close,
+              high: h.high || h.close,
+              low: h.low || h.close,
+              close: h.close,
+              volume: h.volume || 0,
+              change: h.change || 0,
+              changePercent: h.changePercent || 0,
+              metadata: {}
+            }).catch(() => {}); // 忽略重复错误
+          }
+        }
+
+        return itemId;
+      }
+
+      async _getNextItemId() {
+        const items = await this.getAll(CONFIG.STORE_ITEMS);
+        return items.length > 0 ? Math.max(...items.map(i => i.id || 0)) + 1 : 1;
+      }
+
+      _calculateTrend(history) {
+        if (!history || history.length < 2) return 'stable';
+        const recent = history.slice(-5);
+        const first = recent[0]?.close || 0;
+        const last = recent[recent.length - 1]?.close || 0;
+        const change = ((last - first) / first) * 100;
+        if (change > 5) return 'up';
+        if (change < -5) return 'down';
+        return 'stable';
       }
 
       /**
-       * 批量保存数据 - 性能优化版本
+       * 批量保存数据（兼容旧接口）
        */
       async bulkSave(items) {
-        return new Promise((resolve, reject) => {
-          const transaction = this.db.transaction([CONFIG.STORE_ITEMS], 'readwrite');
-          const store = transaction.objectStore(CONFIG.STORE_ITEMS);
-          
-          store.clear().onsuccess = () => { 
-            items.forEach(item => store.add(item)); 
-          };
-          
-          transaction.oncomplete = () => resolve(true);
-          transaction.onerror = () => reject(transaction.error);
-        });
+        console.log(`📊 批量保存 ${items.length} 个道具到8表结构...`);
+
+        for (const item of items) {
+          await this.saveItem(item);
+        }
+
+        console.log('✅ 批量保存完成');
+        return true;
       }
     }
 
