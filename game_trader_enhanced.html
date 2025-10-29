@@ -8459,8 +8459,69 @@
 
       async loadData() {
         try {
-          this.data = await this.db.getAll(CONFIG.STORE_ITEMS);
-          
+          console.log('📖 从8表结构加载数据...');
+
+          // 1. 从items表加载全局道具数据
+          const items = await this.db.getAll(CONFIG.STORE_ITEMS);
+          console.log(`✅ 加载了 ${items.length} 个道具`);
+
+          // 2. 从user_holdings表加载当前用户的持仓
+          const holdings = await this.db.getByIndex(CONFIG.STORE_HOLDINGS, 'uId', this.db.currentUserId);
+          console.log(`✅ 加载了 ${holdings.length} 个持仓记录`);
+
+          // 3. 从price_history表加载价格历史
+          const priceHistory = await this.db.getAll(CONFIG.STORE_PRICE_HISTORY);
+          console.log(`✅ 加载了 ${priceHistory.length} 条价格历史`);
+
+          // 4. 将数据合并为UI层需要的格式
+          this.data = items.map(item => {
+            // 查找该道具的持仓信息
+            const holding = holdings.find(h => h.itemId === item.id);
+
+            // 查找该道具的价格历史
+            const history = priceHistory
+              .filter(h => h.itemId === item.id)
+              .sort((a, b) => a.date - b.date)
+              .map(h => ({
+                date: h.date,
+                open: h.open,
+                high: h.high,
+                low: h.low,
+                close: h.close,
+                volume: h.volume,
+                change: h.change,
+                changePercent: h.changePercent
+              }));
+
+            // 合并为UI需要的格式
+            return {
+              id: item.id,
+              name: item.name,
+              price: item.price,
+              basePrice: item.basePrice,
+              category: item.category,
+              subCategory: item.subCategory,
+              icon: item.icon,
+              isFavorite: item.isFavorite || false,
+              rarityLevel: item.rarityLevel,
+
+              // 持仓信息
+              stock: holding ? holding.currentStock : 0,
+              batches: holding ? holding.batches : [],
+              totalInvestment: holding ? holding.totalInvestment : 0,
+              averageCost: holding ? holding.averageCost : 0,
+
+              // 价格历史
+              history: history,
+
+              // 其他字段
+              createdAt: item.createdAt,
+              updatedAt: item.updatedAt
+            };
+          });
+
+          console.log(`✅ 数据合并完成，共 ${this.data.length} 个道具`);
+
           // 为现有道具添加isFavorite字段（如果不存在）
           let dataChanged = false;
           this.data.forEach(item => {
@@ -8469,18 +8530,19 @@
               dataChanged = true;
             }
           });
-          
+
           // 如果有数据变更，保存到数据库
           if (dataChanged) {
             await this.saveData();
             console.log('✅ 已为现有道具添加收藏字段');
           }
-          
+
+          // 加载配置
           const configCats = await this.db.get(CONFIG.STORE_CONFIG, 'categories');
           const configTheme = await this.db.get(CONFIG.STORE_CONFIG, 'theme');
           const featureToggles = await this.db.get(CONFIG.STORE_CONFIG, 'feature_toggles');
           const pinyinCache = await this.db.get(CONFIG.STORE_CONFIG, 'pinyin_cache');
-          
+
           if (configCats) this.categories = configCats.value;
           if (configTheme) {
             this.themePref = configTheme.value;
@@ -8500,9 +8562,11 @@
             if (typeof v.formatPrice === 'boolean') this.enableFormatPrice = v.formatPrice;
             if (typeof v.hideChartDeleteHint === 'boolean') this.hideChartDeleteHint = v.hideChartDeleteHint;
           }
-          
-          // 初始化用户数据 - 检查是否存在用户1的数据
+
+          // 初始化用户数据
           await this.initUserData();
+
+          console.log('✅ loadData 完成');
         } catch (err) {
           console.error('加载数据失败:', err);
         }
@@ -8510,33 +8574,50 @@
       
       // 初始化用户数据
       async initUserData() {
-        // 检查用户1是否存在（使用数字key）
-        const user1 = await this.db.get(CONFIG.STORE_CONFIG, '1');
-        
-        // 如果不存在，则创建5个默认用户
-        if (!user1) {
-          console.log('👥 检测到首次访问，正在创建默认用户数据...');
-          const now = new Date().toISOString();
-          
-          // 创建5个默认用户
+        // 检查默认用户是否存在
+        const defaultUser = await this.db.get(CONFIG.STORE_USERS, CONFIG.DEFAULT_USER_ID);
+
+        // 如果不存在，则创建默认用户
+        if (!defaultUser) {
+          console.log('👥 检测到首次访问，正在创建默认用户...');
+          const now = Date.now();
+
+          const userData = {
+            uId: CONFIG.DEFAULT_USER_ID,
+            username: '默认用户',
+            email: '',
+            avatar: '',
+            createdAt: now,
+            lastLogin: now,
+            preferences: {
+              theme: 'auto',
+              language: 'zh-CN'
+            },
+            version: 1,
+            synced: false
+          };
+
+          await this.db.put(CONFIG.STORE_USERS, userData);
+          console.log('✅ 默认用户创建成功');
+
+          // 同时在config表中保留旧的用户昵称数据（向后兼容）
           for (let i = 1; i <= 5; i++) {
-            const userData = {
+            const oldUserData = {
               key: i.toString(),
               value: {
                 nickname: `用户昵称${i}`,
                 avatar: '',
-                createdAt: now,
-                updatedAt: now,
+                createdAt: new Date().toISOString(),
+                updatedAt: new Date().toISOString(),
                 theme: 'auto',
                 language: 'zh',
                 timezone: 'Asia/Shanghai'
               }
             };
-            
-            await this.saveConfig(i.toString(), userData.value);
-            console.log(`✅ 已创建用户${i}数据`);
+
+            await this.saveConfig(i.toString(), oldUserData.value);
           }
-          
+
           console.log('✅ 用户数据初始化完成');
         }
       }
