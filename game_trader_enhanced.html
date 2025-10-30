@@ -8620,7 +8620,15 @@
                 quantity: r.quantity || 0,
                 price: r.price || 0,
                 timestamp: r.timestamp,
-                note: r.note || ''
+                note: r.note || '',
+                stockAfter: r.afterStock || 0,
+                totalRevenue: r.type === 'sell' ? r.totalAmount || 0 : undefined,
+                totalCost: r.type === 'buy' ? r.totalAmount || 0 : undefined,
+                // 价格变动相关字段
+                oldPrice: r.metadata?.oldPrice,
+                newPrice: r.metadata?.newPrice,
+                change: r.metadata?.change,
+                changePercent: r.metadata?.changePercent
               }));
 
             // 查找该道具的价格历史
@@ -16352,31 +16360,8 @@
         if (!item.inventory.operationHistory) {
           item.inventory.operationHistory = [];
         }
-        
-        // 测试：如果没有价格变动记录，添加一些测试数据
-        if (item.inventory.operationHistory.length === 0) {
-          const now = new Date();
-          item.inventory.operationHistory.push({
-            type: 'price_change',
-            timestamp: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000).toISOString(), // 2天前
-            oldPrice: 100,
-            newPrice: 120,
-            change: 20,
-            changePercent: '20.00'
-          });
-          
-          item.inventory.operationHistory.push({
-            type: 'price_change',
-            timestamp: new Date(now.getTime() - 1 * 24 * 60 * 60 * 1000).toISOString(), // 1天前
-            oldPrice: 120,
-            newPrice: 110,
-            change: -10,
-            changePercent: '-8.33'
-          });
-          
-          console.log('添加了测试价格变动记录:', item.inventory.operationHistory);
-        }
-        
+
+        // 如果没有操作记录，显示提示信息
         if (item.inventory.operationHistory.length === 0) {
           historyList.innerHTML = '<div class="history-item"><span class="history-time">-</span><span class="history-action">暂无操作记录</span><span class="history-stock">-</span></div>';
           return;
