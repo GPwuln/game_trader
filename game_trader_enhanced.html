@@ -16296,41 +16296,65 @@
         const typeFilter = modal.querySelector('#typeFilter');
         const exportBtn = modal.querySelector('#exportHistory');
         const historyList = modal.querySelector('#historyList');
-        
+
         // 确保inventory对象存在
         this.ensureInventoryExists(item);
-        
+
         // 初始化历史记录显示
         this.updateHistoryDisplay(item, modal);
-        
+
         // 防止重复绑定事件
         if (timeFilter && !timeFilter._historyEventBound) {
           timeFilter._historyEventBound = true;
           timeFilter.addEventListener('change', () => {
-            this.updateHistoryDisplay(item, modal);
+            // 从全局dataMap获取最新的item对象
+            const globalItem = this.state.dataMap.get(item.name);
+            if (globalItem) {
+              this.updateHistoryDisplay(globalItem, modal);
+            } else {
+              console.error('无法找到全局item对象:', item.name);
+            }
           });
         }
-        
+
         if (typeFilter && !typeFilter._historyEventBound) {
           typeFilter._historyEventBound = true;
           typeFilter.addEventListener('change', () => {
-            this.updateHistoryDisplay(item, modal);
+            // 从全局dataMap获取最新的item对象
+            const globalItem = this.state.dataMap.get(item.name);
+            if (globalItem) {
+              this.updateHistoryDisplay(globalItem, modal);
+            } else {
+              console.error('无法找到全局item对象:', item.name);
+            }
           });
         }
-        
+
         if (exportBtn && !exportBtn._historyEventBound) {
           exportBtn._historyEventBound = true;
           exportBtn.addEventListener('click', () => {
-            this.exportHistoryToCSV(item, modal);
+            // 从全局dataMap获取最新的item对象
+            const globalItem = this.state.dataMap.get(item.name);
+            if (globalItem) {
+              this.exportHistoryToCSV(globalItem, modal);
+            } else {
+              console.error('无法找到全局item对象:', item.name);
+            }
           });
         }
-        
+
         // 测试价格变动事件
         const testBtn = modal.querySelector('#testPriceChange');
         if (testBtn && !testBtn._historyEventBound) {
           testBtn._historyEventBound = true;
           testBtn.addEventListener('click', () => {
-            this.addTestPriceChangeRecord(item, modal);
+            // 从全局dataMap获取最新的item对象
+            const globalItem = this.state.dataMap.get(item.name);
+            if (globalItem) {
+              this.addTestPriceChangeRecord(globalItem, modal);
+            } else {
+              console.error('无法找到全局item对象:', item.name);
+            }
           });
         }
       }
@@ -16370,35 +16394,42 @@
       }
       
       updateHistoryDisplay(item, modal) {
+        // 从全局dataMap获取最新的item对象
+        const globalItem = this.state.dataMap.get(item.name);
+        if (!globalItem) {
+          console.error('无法找到全局item对象:', item.name);
+          return;
+        }
+
         const timeFilter = modal.querySelector('#timeFilter');
         const typeFilter = modal.querySelector('#typeFilter');
         const historyList = modal.querySelector('#historyList');
-        
+
         // 确保inventory对象存在
-        if (!item.inventory) {
-          item.inventory = {
+        if (!globalItem.inventory) {
+          globalItem.inventory = {
             currentStock: 0,
             totalInvestment: 0,
             averageCost: 0,
             operationHistory: []
           };
         }
-        
-        if (!item.inventory.operationHistory) {
-          item.inventory.operationHistory = [];
+
+        if (!globalItem.inventory.operationHistory) {
+          globalItem.inventory.operationHistory = [];
         }
 
         // 如果没有操作记录，显示提示信息
-        if (item.inventory.operationHistory.length === 0) {
+        if (globalItem.inventory.operationHistory.length === 0) {
           historyList.innerHTML = '<div class="history-item"><span class="history-time">-</span><span class="history-action">暂无操作记录</span><span class="history-stock">-</span></div>';
           return;
         }
-        
+
         const timeFilterValue = timeFilter?.value || 'all';
         const typeFilterValue = typeFilter?.value || 'all';
-        
+
         // 过滤历史记录
-        let filteredHistory = item.inventory.operationHistory.filter(record => {
+        let filteredHistory = globalItem.inventory.operationHistory.filter(record => {
           // 时间过滤
           if (timeFilterValue !== 'all') {
             const now = new Date();
@@ -16437,11 +16468,11 @@
         
         // 调试信息
         console.log('历史记录过滤:', {
-          totalRecords: item.inventory.operationHistory.length,
+          totalRecords: globalItem.inventory.operationHistory.length,
           timeFilter: timeFilterValue,
           typeFilter: typeFilterValue,
           filteredCount: filteredHistory.length,
-          priceChangeRecords: item.inventory.operationHistory.filter(r => r.type === 'price_change').length,
+          priceChangeRecords: globalItem.inventory.operationHistory.filter(r => r.type === 'price_change').length,
           sampleRecords: filteredHistory.slice(0, 3).map(r => ({
             type: r.type,
             timestamp: r.timestamp,
@@ -16511,10 +16542,10 @@
             }
           }).join('');
         }
-        
+
         // 更新统计信息
-        const stats = this.calculateHistoryStats(item, filteredHistory);
-        
+        const stats = this.calculateHistoryStats(globalItem, filteredHistory);
+
         // 基础统计信息
         const activeDaysEl = modal.querySelector('#activeDays');
         const avgIntervalEl = modal.querySelector('#avgInterval');
@@ -16545,19 +16576,27 @@
       }
       
       exportHistoryToCSV(item, modal) {
-        if (!item.inventory || !item.inventory.operationHistory || item.inventory.operationHistory.length === 0) {
-          this.toast.setCurrentItem(item);
+        // 从全局dataMap获取最新的item对象
+        const globalItem = this.state.dataMap.get(item.name);
+        if (!globalItem) {
+          console.error('无法找到全局item对象:', item.name);
+          this.toast.warning('导出失败：无法找到道具数据', '❌');
+          return;
+        }
+
+        if (!globalItem.inventory || !globalItem.inventory.operationHistory || globalItem.inventory.operationHistory.length === 0) {
+          this.toast.setCurrentItem(globalItem);
           this.toast.warning('暂无历史记录可导出', '⚠️');
           return;
         }
-        
+
         const timeFilter = modal.querySelector('#timeFilter');
         const typeFilter = modal.querySelector('#typeFilter');
         const timeFilterValue = timeFilter?.value || 'all';
         const typeFilterValue = typeFilter?.value || 'all';
-        
+
         // 过滤历史记录（使用相同的过滤逻辑）
-        let filteredHistory = item.inventory.operationHistory.filter(record => {
+        let filteredHistory = globalItem.inventory.operationHistory.filter(record => {
           if (timeFilterValue !== 'all') {
             const now = new Date();
             const recordDate = new Date(record.timestamp);
@@ -16620,19 +16659,19 @@
         }).join('\n');
         
         const csvContent = csvHeader + csvRows;
-        
+
         // 创建下载链接
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement('a');
         const url = URL.createObjectURL(blob);
         link.setAttribute('href', url);
-        link.setAttribute('download', `${item.name}_历史记录_${new Date().toISOString().split('T')[0]}.csv`);
+        link.setAttribute('download', `${globalItem.name}_历史记录_${new Date().toISOString().split('T')[0]}.csv`);
         link.style.visibility = 'hidden';
         document.body.appendChild(link);
         link.click();
         document.body.removeChild(link);
-        
-        this.toast.setCurrentItem(item);
+
+        this.toast.setCurrentItem(globalItem);
         this.toast.success(`已导出 ${filteredHistory.length} 条历史记录`, '📊');
       }
       
