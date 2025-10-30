@@ -8333,19 +8333,19 @@
         };
         await this.put(CONFIG.STORE_ITEMS, itemData);
 
-        // 2. 保存持仓到user_holdings表
-        if (item.stock !== undefined && item.stock > 0) {
+        // 2. 保存持仓到user_holdings表 - 从inventory结构读取
+        if (item.inventory && item.inventory.currentStock !== undefined) {
           const holdingId = `${this.currentUserId}#${itemId}`;
           const holding = {
             holdingId,
             uId: this.currentUserId,
             itemId,
-            batches: item.batches || [],
-            currentStock: item.stock,
+            batches: item.inventory.batches || [],
+            currentStock: item.inventory.currentStock,
             lockedStock: 0,
-            totalInvestment: item.totalInvestment || 0,
+            totalInvestment: item.inventory.totalInvestment || 0,
             totalRevenue: 0,
-            averageCost: item.averageCost || 0,
+            averageCost: item.inventory.averageCost || 0,
             averageSellPrice: 0,
             profit: 0,
             unrealizedProfit: 0,
@@ -8630,11 +8630,18 @@
               isFavorite: item.isFavorite || false,
               rarityLevel: item.rarityLevel,
 
-              // 持仓信息
-              stock: holding ? holding.currentStock : 0,
-              batches: holding ? holding.batches : [],
-              totalInvestment: holding ? holding.totalInvestment : 0,
-              averageCost: holding ? holding.averageCost : 0,
+              // 持仓信息 - 使用inventory结构（与UI层一致）
+              inventory: holding ? {
+                currentStock: holding.currentStock,
+                totalInvestment: holding.totalInvestment,
+                averageCost: holding.averageCost,
+                operationHistory: [] // 操作历史从内存维护，不持久化
+              } : {
+                currentStock: 0,
+                totalInvestment: 0,
+                averageCost: 0,
+                operationHistory: []
+              },
 
               // 价格历史
               history: history,
@@ -11847,20 +11854,26 @@
           this.showToast('数据已更新', '✅', 'success', item);
         } else {
           const newItem = {
-            name, 
-            price, 
+            name,
+            price,
             history: [{close: price, date: Utils.getCurrentDateTime()}],
-            isFavorite: false  // 默认不收藏
+            isFavorite: false,  // 默认不收藏
+            inventory: {  // 初始化库存结构
+              currentStock: 0,
+              totalInvestment: 0,
+              averageCost: 0,
+              operationHistory: []
+            }
           };
-          
+
           if (cat) {
             newItem.category = cat;
             if (subCat) newItem.subCategory = subCat;
           }
-          
+
           // 总是设置icon属性，如果没有填写图标就设置为空字符串
           newItem.icon = icon || '';
-          
+
           this.state.data.push(newItem);
           this.showToast('数据已添加', '✅', 'success', newItem);
         }
