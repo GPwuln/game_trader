@@ -11086,7 +11086,7 @@
 
             const priceChangeRecord = {
               type: 'price_change',
-              timestamp: new Date().toISOString(),
+              timestamp: Date.now(),
               oldPrice: oldPrice,
               newPrice: newPrice,
               change: newPrice - oldPrice,
@@ -11846,7 +11846,7 @@
             
             const priceChangeRecord = {
               type: 'price_change',
-              timestamp: new Date().toISOString(),
+              timestamp: Date.now(),
               oldPrice: oldPrice,
               newPrice: price,
               change: price - oldPrice,
@@ -13633,7 +13633,7 @@
           for (let i = startDays; i >= startDays - operationDays + 1; i--) {
             const d = new Date(now);
             d.setDate(d.getDate() - i);
-            const timestamp = d.toISOString();
+            const timestamp = d.getTime();
             
             // 随机决定是否进行操作（70%概率）
             if (Math.random() > 0.3) {
@@ -13687,7 +13687,7 @@
               price: price,
               totalCost: totalCost,
               stockAfter: currentStock,
-              timestamp: now.toISOString()
+              timestamp: now.getTime()
             });
           }
           
@@ -14947,7 +14947,7 @@
           quantity: quantity,
           price: currentPrice,
           totalCost: totalCost,
-          timestamp: new Date(),
+          timestamp: Date.now(),
           stockAfter: item.inventory.currentStock
         };
 
@@ -15018,7 +15018,7 @@
           quantity: quantity,
           price: currentPrice,
           totalRevenue: totalRevenue,
-          timestamp: new Date(),
+          timestamp: Date.now(),
           stockAfter: item.inventory.currentStock
         };
 
@@ -16320,7 +16320,7 @@
         
         const priceChangeRecord = {
           type: 'price_change',
-          timestamp: new Date().toISOString(),
+          timestamp: Date.now(),
           oldPrice: currentPrice,
           newPrice: newPrice,
           change: change,
