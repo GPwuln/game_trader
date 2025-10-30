@@ -9658,6 +9658,7 @@
                         <div class="character-selector-section">
                           <label for="characterSelect" class="character-label">角色</label>
                           <select id="characterSelect" class="character-select">
+                            <option value="all">📊 全部角色</option>
                             <option value="1" ${this.currentUserId === 1 ? 'selected' : ''}>角色1</option>
                             <option value="2" ${this.currentUserId === 2 ? 'selected' : ''}>角色2</option>
                             <option value="3" ${this.currentUserId === 3 ? 'selected' : ''}>角色3</option>
@@ -14885,8 +14886,8 @@
         if (characterSelect && !characterSelect._inventoryEventBound) {
           characterSelect._inventoryEventBound = true;
           characterSelect.addEventListener('change', async (e) => {
-            const selectedUserId = parseInt(e.target.value);
-            console.log(`🔄 切换库存查看角色: ${selectedUserId}`);
+            const selectedValue = e.target.value;
+            console.log(`🔄 切换库存查看角色: ${selectedValue}`);
 
             // 从全局dataMap获取最新item
             const globalItem = this.state.dataMap.get(item.name);
@@ -14895,57 +14896,98 @@
               return;
             }
 
-            // 从数据库加载该用户对该道具的持仓数据
-            const holdingId = `${selectedUserId}#${globalItem.id}`;
-            const holding = await this.state.db.get('user_holdings', holdingId);
+            // 判断是否选择"全部角色"
+            if (selectedValue === 'all') {
+              // 加载所有角色的数据
+              await this.loadAllUsersInventory(globalItem, modal);
 
-            // 从records表加载该用户对该道具的交易记录
-            const allRecords = await this.state.db.getByIndex('records', 'uId', selectedUserId);
-            const itemRecords = allRecords.filter(r => r.itemId === globalItem.id);
+              // 禁用买入/卖出按钮
+              if (buyBtn) {
+                buyBtn.disabled = true;
+                buyBtn.title = "请选择具体角色后操作";
+                buyBtn.style.opacity = '0.5';
+                buyBtn.style.cursor = 'not-allowed';
+              }
+              if (sellBtn) {
+                sellBtn.disabled = true;
+                sellBtn.title = "请选择具体角色后操作";
+                sellBtn.style.opacity = '0.5';
+                sellBtn.style.cursor = 'not-allowed';
+              }
 
-            // 更新item的inventory数据为选中用户的数据
-            if (holding) {
-              globalItem.inventory = {
-                currentStock: holding.currentStock || 0,
-                totalInvestment: holding.totalInvestment || 0,
-                averageCost: holding.averageCost || 0,
-                operationHistory: itemRecords.map(r => ({
-                  type: r.type,
-                  quantity: r.quantity,
-                  price: r.price,
-                  totalCost: r.type === 'buy' ? r.totalAmount : 0,
-                  totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
-                  timestamp: r.timestamp,
-                  stockAfter: r.afterStock
-                }))
-              };
+              // 显示切换提示
+              this.toast.setCurrentItem(globalItem);
+              this.toast.info(`已切换到全部角色汇总视图`, '📊');
             } else {
-              // 如果没有持仓，显示空数据
-              globalItem.inventory = {
-                currentStock: 0,
-                totalInvestment: 0,
-                averageCost: 0,
-                operationHistory: itemRecords.map(r => ({
-                  type: r.type,
-                  quantity: r.quantity,
-                  price: r.price,
-                  totalCost: r.type === 'buy' ? r.totalAmount : 0,
-                  totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
-                  timestamp: r.timestamp,
-                  stockAfter: r.afterStock
-                }))
-              };
+              // 选择具体角色
+              const selectedUserId = parseInt(selectedValue);
+
+              // 启用买入/卖出按钮
+              if (buyBtn) {
+                buyBtn.disabled = false;
+                buyBtn.title = "";
+                buyBtn.style.opacity = '1';
+                buyBtn.style.cursor = 'pointer';
+              }
+              if (sellBtn) {
+                sellBtn.disabled = false;
+                sellBtn.title = "";
+                sellBtn.style.opacity = '1';
+                sellBtn.style.cursor = 'pointer';
+              }
+
+              // 从数据库加载该用户对该道具的持仓数据
+              const holdingId = `${selectedUserId}#${globalItem.id}`;
+              const holding = await this.state.db.get('user_holdings', holdingId);
+
+              // 从records表加载该用户对该道具的交易记录
+              const allRecords = await this.state.db.getByIndex('records', 'uId', selectedUserId);
+              const itemRecords = allRecords.filter(r => r.itemId === globalItem.id);
+
+              // 更新item的inventory数据为选中用户的数据
+              if (holding) {
+                globalItem.inventory = {
+                  currentStock: holding.currentStock || 0,
+                  totalInvestment: holding.totalInvestment || 0,
+                  averageCost: holding.averageCost || 0,
+                  operationHistory: itemRecords.map(r => ({
+                    type: r.type,
+                    quantity: r.quantity,
+                    price: r.price,
+                    totalCost: r.type === 'buy' ? r.totalAmount : 0,
+                    totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
+                    timestamp: r.timestamp,
+                    stockAfter: r.afterStock
+                  }))
+                };
+              } else {
+                // 如果没有持仓，显示空数据
+                globalItem.inventory = {
+                  currentStock: 0,
+                  totalInvestment: 0,
+                  averageCost: 0,
+                  operationHistory: itemRecords.map(r => ({
+                    type: r.type,
+                    quantity: r.quantity,
+                    price: r.price,
+                    totalCost: r.type === 'buy' ? r.totalAmount : 0,
+                    totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
+                    timestamp: r.timestamp,
+                    stockAfter: r.afterStock
+                  }))
+                };
+              }
+
+              // 更新库存显示（单个角色模式）
+              this.updateInventoryDisplay(globalItem, modal);
+              this.updateOperationHistory(globalItem, modal);
+              this.updateInventoryChart(globalItem, 7, modal, 'stock');
+              this.updateSmartSuggestions(globalItem, modal);
+
+              // 显示切换提示
+              this.toast.setCurrentItem(globalItem);
+              this.toast.info(`已切换到角色${selectedUserId}的库存视图`, '👤');
             }
-
-            // 更新库存显示
-            this.updateInventoryDisplay(globalItem, modal);
-            this.updateOperationHistory(globalItem, modal);
-            this.updateInventoryChart(globalItem, 7, modal, 'stock');
-            this.updateSmartSuggestions(globalItem, modal);
-
-            // 显示切换提示
-            this.toast.setCurrentItem(globalItem);
-            this.toast.info(`已切换到角色${selectedUserId}的库存视图`, '👤');
           });
         }
 
@@ -14973,7 +15015,17 @@
           
           // 获取当前选中的角色ID
           const characterSelect = modal.querySelector('#characterSelect');
-          const selectedUserId = characterSelect ? parseInt(characterSelect.value) : this.currentUserId;
+          const selectedValue = characterSelect ? characterSelect.value : this.currentUserId.toString();
+
+          // 检查是否选择了"全部角色"
+          if (selectedValue === 'all') {
+            this.showInventoryError(quantityInput, '请先选择具体角色');
+            this.toast.setCurrentItem(item);
+            this.toast.warning('请先选择具体角色后再操作', '⚠️');
+            return;
+          }
+
+          const selectedUserId = parseInt(selectedValue);
           this.buyStock(item, quantity, modal, selectedUserId);
           });
         }
@@ -15000,7 +15052,17 @@
           
           // 获取当前选中的角色ID
           const characterSelect = modal.querySelector('#characterSelect');
-          const selectedUserId = characterSelect ? parseInt(characterSelect.value) : this.currentUserId;
+          const selectedValue = characterSelect ? characterSelect.value : this.currentUserId.toString();
+
+          // 检查是否选择了"全部角色"
+          if (selectedValue === 'all') {
+            this.showInventoryError(quantityInput, '请先选择具体角色');
+            this.toast.setCurrentItem(item);
+            this.toast.warning('请先选择具体角色后再操作', '⚠️');
+            return;
+          }
+
+          const selectedUserId = parseInt(selectedValue);
           this.sellStock(item, quantity, modal, selectedUserId);
           });
         }
@@ -15191,6 +15253,136 @@
         await this.state.db.updateUserStats(targetUserId);
       }
       
+      async loadAllUsersInventory(item, modal) {
+        console.log('📊 加载所有角色的库存数据...');
+
+        // 加载所有5个角色的持仓和交易记录
+        const allUsersData = [];
+        let totalStock = 0;
+        let totalInvestment = 0;
+        const allOperationHistory = [];
+
+        for (let userId = 1; userId <= 5; userId++) {
+          const holdingId = `${userId}#${item.id}`;
+          const holding = await this.state.db.get('user_holdings', holdingId);
+
+          // 加载交易记录
+          const allRecords = await this.state.db.getByIndex('records', 'uId', userId);
+          const itemRecords = allRecords.filter(r => r.itemId === item.id);
+
+          const userData = {
+            userId: userId,
+            currentStock: holding ? (holding.currentStock || 0) : 0,
+            totalInvestment: holding ? (holding.totalInvestment || 0) : 0,
+            averageCost: holding ? (holding.averageCost || 0) : 0,
+            recordCount: itemRecords.length
+          };
+
+          allUsersData.push(userData);
+          totalStock += userData.currentStock;
+          totalInvestment += userData.totalInvestment;
+
+          // 合并操作历史，添加用户标识
+          itemRecords.forEach(r => {
+            allOperationHistory.push({
+              type: r.type,
+              quantity: r.quantity,
+              price: r.price,
+              totalCost: r.type === 'buy' ? r.totalAmount : 0,
+              totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
+              timestamp: r.timestamp,
+              stockAfter: r.afterStock,
+              userId: userId,
+              userLabel: `角色${userId}`
+            });
+          });
+        }
+
+        // 计算总体平均成本
+        const totalAverageCost = totalStock > 0 ? totalInvestment / totalStock : 0;
+
+        // 按时间倒序排序历史记录
+        allOperationHistory.sort((a, b) => b.timestamp - a.timestamp);
+
+        // 生成所有角色的库存详情HTML
+        const inventoryLeft = modal.querySelector('.inventory-left');
+        if (inventoryLeft) {
+          inventoryLeft.innerHTML = `
+            <div class="all-users-inventory-view">
+              <div class="inventory-title">
+                <span class="inventory-icon">📊</span>
+                <h3>全部角色库存</h3>
+              </div>
+
+              <!-- 各角色库存卡片列表 -->
+              <div class="user-inventory-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 16px 0;">
+                ${allUsersData.map(userData => `
+                  <div class="user-inventory-card" style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; ${userData.currentStock > 0 ? 'border-left: 3px solid var(--accent);' : ''}">
+                    <div class="user-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
+                      <span class="user-avatar" style="width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #2563eb); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: white;">${userData.userId}</span>
+                      <span class="user-name" style="font-size: 14px; font-weight: 600;">角色${userData.userId}</span>
+                    </div>
+                    <div class="user-stats" style="display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
+                      <div class="stat-row" style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--fg); opacity: 0.7;">库存</span>
+                        <span style="font-weight: 600; color: ${userData.currentStock > 0 ? 'var(--accent)' : 'var(--fg)'};">${userData.currentStock} 件</span>
+                      </div>
+                      <div class="stat-row" style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--fg); opacity: 0.7;">投资</span>
+                        <span style="font-weight: 600;">¥${Utils.formatPrice(userData.totalInvestment, this.state.enableFormatPrice)}</span>
+                      </div>
+                      <div class="stat-row" style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--fg); opacity: 0.7;">成本</span>
+                        <span style="font-weight: 600;">¥${Utils.formatPrice(userData.averageCost, this.state.enableFormatPrice)}</span>
+                      </div>
+                      <div class="stat-row" style="display: flex; justify-content: space-between;">
+                        <span style="color: var(--fg); opacity: 0.7;">交易</span>
+                        <span style="font-weight: 600;">${userData.recordCount} 笔</span>
+                      </div>
+                    </div>
+                  </div>
+                `).join('')}
+              </div>
+
+              <!-- 总计汇总 -->
+              <div class="total-summary" style="background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(37, 99, 235, 0.1)); border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-top: 16px;">
+                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: var(--accent);">📊 总计汇总</h4>
+                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
+                  <div style="text-align: center;">
+                    <div style="font-size: 20px; font-weight: 700; color: var(--accent);">${totalStock}</div>
+                    <div style="font-size: 12px; color: var(--fg); opacity: 0.7; margin-top: 4px;">总库存（件）</div>
+                  </div>
+                  <div style="text-align: center;">
+                    <div style="font-size: 20px; font-weight: 700; color: var(--accent);">¥${Utils.formatPrice(totalInvestment, this.state.enableFormatPrice)}</div>
+                    <div style="font-size: 12px; color: var(--fg); opacity: 0.7; margin-top: 4px;">总投资</div>
+                  </div>
+                  <div style="text-align: center;">
+                    <div style="font-size: 20px; font-weight: 700; color: var(--accent);">¥${Utils.formatPrice(totalAverageCost, this.state.enableFormatPrice)}</div>
+                    <div style="font-size: 12px; color: var(--fg); opacity: 0.7; margin-top: 4px;">平均成本</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          `;
+        }
+
+        // 更新item的inventory为汇总数据
+        item.inventory = {
+          currentStock: totalStock,
+          totalInvestment: totalInvestment,
+          averageCost: totalAverageCost,
+          operationHistory: allOperationHistory,
+          isAllUsersView: true // 标记为全部角色视图
+        };
+
+        // 更新其他显示区域
+        this.updateOperationHistory(item, modal);
+        this.updateInventoryChart(item, 7, modal, 'stock');
+        this.updateSmartSuggestions(item, modal);
+
+        console.log('✅ 全部角色库存数据加载完成');
+      }
+
       updateInventoryDisplay(item, modal) {
         const currentStockEl = modal.querySelector('#currentStock');
         const totalInvestmentEl = modal.querySelector('#totalInvestment');
@@ -15279,38 +15471,41 @@
         const historyHTML = sortedHistory.slice(0, 20).map(record => {
           const time = new Date(record.timestamp);
           const timeStr = this.formatTimeAgo(time);
-          
+
           let actionText = '';
           let actionClass = '';
           let stockText = '';
-          
+
+          // 检查是否有用户标识（全部角色视图）
+          const userLabel = record.userLabel || record.userId ? `<span class="user-badge" style="display: inline-block; padding: 2px 6px; background: linear-gradient(135deg, var(--accent), #2563eb); color: white; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 4px;">${record.userLabel || `角色${record.userId}`}</span>` : '';
+
           switch (record.type) {
             case 'buy':
-              actionText = `购入 ${record.quantity} 件`;
+              actionText = `${userLabel}购入 ${record.quantity} 件`;
               actionClass = 'history-buy';
-              stockText = `库存: ${record.newStock || 0}`;
+              stockText = `库存: ${record.stockAfter || record.newStock || 0}`;
               break;
             case 'sell':
-              actionText = `卖出 ${record.quantity} 件`;
+              actionText = `${userLabel}卖出 ${record.quantity} 件`;
               actionClass = 'history-sell';
-              stockText = `库存: ${record.newStock || 0}`;
+              stockText = `库存: ${record.stockAfter || record.newStock || 0}`;
               break;
             case 'price_change':
-              actionText = `价格变动: ¥${Utils.formatPrice(record.oldPrice)} → ¥${Utils.formatPrice(record.newPrice)}`;
+              actionText = `${userLabel}价格变动: ¥${Utils.formatPrice(record.oldPrice, this.state.enableFormatPrice)} → ¥${Utils.formatPrice(record.newPrice, this.state.enableFormatPrice)}`;
               actionClass = 'history-price';
               stockText = `库存: ${record.stock || 0}`;
               break;
             case 'system':
-              actionText = record.description || '系统调整';
+              actionText = `${userLabel}${record.description || '系统调整'}`;
               actionClass = 'history-system';
               stockText = `库存: ${record.stock || 0}`;
               break;
             default:
-              actionText = record.description || '未知操作';
+              actionText = `${userLabel}${record.description || '未知操作'}`;
               actionClass = 'history-other';
               stockText = `库存: ${record.stock || 0}`;
           }
-          
+
           return `
             <div class="history-item ${actionClass}">
               <span class="history-time">${timeStr}</span>
