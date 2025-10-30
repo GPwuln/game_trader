@@ -1,0 +1,1718 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="游戏道具交易记录管理系统 V2 - 多用户支持 & 持仓管理">
+  <meta name="keywords" content="游戏道具,交易记录,多用户,持仓管理">
+  <meta name="author" content="Game Trader V2">
+
+  <title>游戏道具交易系统 V2</title>
+
+  <!-- 主题管理器 -->
+  <script>
+    (function() {
+      const STORAGE_KEY = 'game_trader_v2_theme';
+      const getSystemPreference = () => window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+
+      const setTheme = (theme) => {
+        const actualTheme = theme === 'auto' ? getSystemPreference() : theme;
+        document.documentElement.setAttribute('data-theme', actualTheme);
+        localStorage.setItem(STORAGE_KEY, theme);
+        return actualTheme;
+      };
+
+      const savedTheme = localStorage.getItem(STORAGE_KEY) || 'auto';
+      setTheme(savedTheme);
+
+      window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+        if (localStorage.getItem(STORAGE_KEY) === 'auto') setTheme('auto');
+      });
+
+      window.ThemeManager = { setTheme, getSystemPreference };
+    })();
+  </script>
+
+  <style>
+    /* ===== CSS 变量系统 ===== */
+    :root {
+      --bg: #f8fafc;
+      --fg: #1e293b;
+      --card: #ffffff;
+      --accent: #4f46e5;
+      --badge-bg: #e0e7ff;
+      --badge-fg: #4338ca;
+      --border: rgba(2,6,23,0.06);
+      --price-up: #10b981;
+      --price-down: #ef4444;
+      --price-neutral: #94a3b8;
+      --shadow: 0 2px 8px rgba(0,0,0,0.1);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.15);
+      --radius: 12px;
+      --transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    :root[data-theme='dark'] {
+      --bg: #0f172a;
+      --fg: #e2e8f0;
+      --card: #1e293b;
+      --accent: #7c3aed;
+      --badge-bg: #312e81;
+      --badge-fg: #c4b5fd;
+      --border: rgba(255,255,255,0.1);
+      --price-up: #34d399;
+      --price-down: #f87171;
+      --price-neutral: #64748b;
+      --shadow: 0 2px 8px rgba(0,0,0,0.3);
+      --shadow-lg: 0 8px 24px rgba(0,0,0,0.4);
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      transition: background-color 0.3s, border-color 0.3s, color 0.3s;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--fg);
+      line-height: 1.6;
+    }
+
+    /* ===== 布局 ===== */
+    .app-container {
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    .app-header {
+      background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+      color: white;
+      padding: 2rem;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .header-content {
+      max-width: 1400px;
+      margin: 0 auto;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 2rem;
+    }
+
+    .header-title {
+      font-size: 2rem;
+      font-weight: 800;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 1rem;
+      align-items: center;
+    }
+
+    .user-info {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      background: rgba(255,255,255,0.15);
+      padding: 0.5rem 1rem;
+      border-radius: var(--radius);
+      backdrop-filter: blur(10px);
+      cursor: pointer;
+    }
+
+    .user-avatar {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.25);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: bold;
+    }
+
+    .app-main {
+      flex: 1;
+      max-width: 1400px;
+      width: 100%;
+      margin: 2rem auto;
+      padding: 0 2rem;
+    }
+
+    .toolbar {
+      background: var(--card);
+      padding: 1.5rem;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      margin-bottom: 2rem;
+      display: flex;
+      gap: 1rem;
+      flex-wrap: wrap;
+      align-items: center;
+    }
+
+    .search-box {
+      flex: 1;
+      min-width: 300px;
+      position: relative;
+    }
+
+    .search-box input {
+      width: 100%;
+      padding: 0.75rem 2.5rem 0.75rem 1rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--fg);
+      font-size: 1rem;
+    }
+
+    .search-box input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+
+    /* ===== 按钮系统 ===== */
+    .btn {
+      padding: 0.75rem 1.5rem;
+      border: none;
+      border-radius: var(--radius);
+      background: linear-gradient(135deg, var(--accent), #6366f1);
+      color: white;
+      font-weight: 600;
+      cursor: pointer;
+      transition: var(--transition);
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .btn-secondary {
+      background: var(--card);
+      color: var(--fg);
+      border: 1px solid var(--border);
+    }
+
+    .btn-danger {
+      background: linear-gradient(135deg, #ef4444, #dc2626);
+    }
+
+    .btn-sm {
+      padding: 0.5rem 1rem;
+      font-size: 0.875rem;
+    }
+
+    /* ===== 卡片网格 ===== */
+    .items-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .item-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 1.5rem;
+      box-shadow: var(--shadow);
+      cursor: pointer;
+      transition: var(--transition);
+      position: relative;
+    }
+
+    .item-card:hover {
+      transform: translateY(-4px);
+      box-shadow: var(--shadow-lg);
+    }
+
+    .item-header {
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      margin-bottom: 1rem;
+    }
+
+    .item-icon {
+      width: 56px;
+      height: 56px;
+      border-radius: var(--radius);
+      background: var(--badge-bg);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+    }
+
+    .item-icon img {
+      width: 48px;
+      height: 48px;
+      object-fit: contain;
+    }
+
+    .item-info {
+      flex: 1;
+    }
+
+    .item-name {
+      font-size: 1.125rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+
+    .item-category {
+      font-size: 0.875rem;
+      color: var(--badge-fg);
+      background: var(--badge-bg);
+      padding: 0.25rem 0.75rem;
+      border-radius: 999px;
+      display: inline-block;
+    }
+
+    .item-stats {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .stat-item {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .stat-label {
+      font-size: 0.75rem;
+      color: var(--fg);
+      opacity: 0.6;
+      margin-bottom: 0.25rem;
+    }
+
+    .stat-value {
+      font-size: 1.25rem;
+      font-weight: 700;
+      color: var(--accent);
+    }
+
+    .price-up { color: var(--price-up); }
+    .price-down { color: var(--price-down); }
+    .price-neutral { color: var(--price-neutral); }
+
+    /* ===== 模态框 ===== */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.7);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+
+    .modal-overlay.show {
+      display: flex;
+    }
+
+    .modal {
+      background: var(--card);
+      border-radius: var(--radius);
+      max-width: 800px;
+      width: 100%;
+      max-height: 90vh;
+      overflow: auto;
+      box-shadow: var(--shadow-lg);
+    }
+
+    .modal-header {
+      padding: 1.5rem;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+    }
+
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 1.5rem;
+      cursor: pointer;
+      color: var(--fg);
+      opacity: 0.6;
+      transition: var(--transition);
+    }
+
+    .modal-close:hover {
+      opacity: 1;
+    }
+
+    .modal-body {
+      padding: 1.5rem;
+    }
+
+    .modal-footer {
+      padding: 1.5rem;
+      border-top: 1px solid var(--border);
+      display: flex;
+      gap: 1rem;
+      justify-content: flex-end;
+    }
+
+    /* ===== 表单 ===== */
+    .form-group {
+      margin-bottom: 1.5rem;
+    }
+
+    .form-label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight: 600;
+    }
+
+    .form-input {
+      width: 100%;
+      padding: 0.75rem;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      background: var(--bg);
+      color: var(--fg);
+      font-size: 1rem;
+    }
+
+    .form-input:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px rgba(79, 70, 229, 0.1);
+    }
+
+    /* ===== 标签页 ===== */
+    .tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border);
+      margin-bottom: 1.5rem;
+    }
+
+    .tab {
+      padding: 0.75rem 1.5rem;
+      background: none;
+      border: none;
+      border-bottom: 2px solid transparent;
+      color: var(--fg);
+      opacity: 0.6;
+      cursor: pointer;
+      transition: var(--transition);
+      font-weight: 600;
+    }
+
+    .tab.active {
+      opacity: 1;
+      border-bottom-color: var(--accent);
+      color: var(--accent);
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    /* ===== 加载动画 ===== */
+    .loading {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 3rem;
+    }
+
+    .spinner {
+      width: 48px;
+      height: 48px;
+      border: 4px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    /* ===== 空状态 ===== */
+    .empty-state {
+      text-align: center;
+      padding: 4rem 2rem;
+    }
+
+    .empty-icon {
+      font-size: 4rem;
+      margin-bottom: 1rem;
+      opacity: 0.3;
+    }
+
+    .empty-text {
+      font-size: 1.25rem;
+      font-weight: 600;
+      margin-bottom: 0.5rem;
+    }
+
+    .empty-hint {
+      color: var(--fg);
+      opacity: 0.6;
+    }
+
+    /* ===== Toast 通知 ===== */
+    .toast {
+      position: fixed;
+      bottom: 2rem;
+      right: 2rem;
+      background: var(--card);
+      padding: 1rem 1.5rem;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      display: flex;
+      align-items: center;
+      gap: 1rem;
+      z-index: 2000;
+      animation: slideIn 0.3s ease;
+    }
+
+    @keyframes slideIn {
+      from {
+        transform: translateX(100%);
+        opacity: 0;
+      }
+      to {
+        transform: translateX(0);
+        opacity: 1;
+      }
+    }
+
+    .toast.success { border-left: 4px solid var(--price-up); }
+    .toast.error { border-left: 4px solid var(--price-down); }
+    .toast.info { border-left: 4px solid var(--accent); }
+
+    /* ===== 统计卡片 ===== */
+    .stats-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+      gap: 1.5rem;
+      margin-bottom: 2rem;
+    }
+
+    .stat-card {
+      background: var(--card);
+      padding: 1.5rem;
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+    }
+
+    .stat-card-label {
+      font-size: 0.875rem;
+      color: var(--fg);
+      opacity: 0.7;
+      margin-bottom: 0.5rem;
+    }
+
+    .stat-card-value {
+      font-size: 2rem;
+      font-weight: 800;
+      color: var(--accent);
+    }
+
+    /* ===== 响应式 ===== */
+    @media (max-width: 768px) {
+      .app-main {
+        padding: 0 1rem;
+      }
+
+      .items-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .header-content {
+        flex-direction: column;
+      }
+
+      .toolbar {
+        flex-direction: column;
+      }
+
+      .search-box {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="app-container">
+    <!-- 顶部导航 -->
+    <header class="app-header">
+      <div class="header-content">
+        <h1 class="header-title">🎮 游戏道具交易系统 V2</h1>
+        <div class="header-actions">
+          <div class="user-info" id="userInfo" onclick="app.ui.showUserMenu()">
+            <div class="user-avatar" id="userAvatar">U</div>
+            <span id="userName">游客</span>
+          </div>
+          <button class="btn btn-sm" onclick="app.ui.showSettings()">⚙️ 设置</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- 主内容区 -->
+    <main class="app-main">
+      <!-- 统计概览 -->
+      <div class="stats-grid" id="statsGrid">
+        <div class="stat-card">
+          <div class="stat-card-label">总持仓价值</div>
+          <div class="stat-card-value" id="totalValue">¥0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">总投入</div>
+          <div class="stat-card-value" id="totalInvestment">¥0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">总收益</div>
+          <div class="stat-card-value price-up" id="totalProfit">¥0</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-card-label">收益率</div>
+          <div class="stat-card-value" id="profitRate">0%</div>
+        </div>
+      </div>
+
+      <!-- 工具栏 -->
+      <div class="toolbar">
+        <div class="search-box">
+          <input type="text" id="searchInput" placeholder="搜索道具名称..." />
+        </div>
+        <select id="categoryFilter" class="form-input" style="max-width: 200px;">
+          <option value="">全部分类</option>
+        </select>
+        <select id="viewMode" class="form-input" style="max-width: 150px;">
+          <option value="all">全部道具</option>
+          <option value="holdings">我的持仓</option>
+          <option value="market">市场道具</option>
+        </select>
+        <button class="btn" onclick="app.ui.showAddItemModal()">➕ 添加道具</button>
+      </div>
+
+      <!-- 道具列表 -->
+      <div id="itemsContainer">
+        <div class="loading">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <!-- 模态框容器 -->
+  <div id="modalContainer"></div>
+
+  <script>
+    'use strict';
+
+    // ==================== 数据库管理器 ====================
+
+    class DatabaseManager {
+      constructor() {
+        this.dbName = 'GameItemsDB';
+        this.version = 5;
+        this.db = null;
+      }
+
+      async init() {
+        return new Promise((resolve, reject) => {
+          const request = indexedDB.open(this.dbName, this.version);
+
+          request.onerror = () => reject(request.error);
+          request.onsuccess = () => {
+            this.db = request.result;
+            console.log('✅ 数据库初始化成功');
+            resolve(this.db);
+          };
+
+          request.onupgradeneeded = (event) => {
+            const db = event.target.result;
+
+            // 1. users 表
+            if (!db.objectStoreNames.contains('users')) {
+              const usersStore = db.createObjectStore('users', { keyPath: 'uId' });
+              usersStore.createIndex('username', 'username', { unique: true });
+              usersStore.createIndex('email', 'email', { unique: false });
+              usersStore.createIndex('createdAt', 'createdAt', { unique: false });
+            }
+
+            // 2. items 表
+            if (!db.objectStoreNames.contains('items')) {
+              const itemsStore = db.createObjectStore('items', { keyPath: 'id', autoIncrement: true });
+              itemsStore.createIndex('name', 'name', { unique: true });
+              itemsStore.createIndex('category', 'category', { unique: false });
+              itemsStore.createIndex('subCategory', 'subCategory', { unique: false });
+              itemsStore.createIndex('price', 'price', { unique: false });
+              itemsStore.createIndex('marketTrend', 'marketTrend', { unique: false });
+              itemsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+            }
+
+            // 3. user_holdings 表
+            if (!db.objectStoreNames.contains('user_holdings')) {
+              const holdingsStore = db.createObjectStore('user_holdings', { keyPath: 'holdingId' });
+              holdingsStore.createIndex('uId', 'uId', { unique: false });
+              holdingsStore.createIndex('itemId', 'itemId', { unique: false });
+              holdingsStore.createIndex('profitRate', 'profitRate', { unique: false });
+              holdingsStore.createIndex('synced', 'synced', { unique: false });
+            }
+
+            // 4. records 表
+            if (!db.objectStoreNames.contains('records')) {
+              const recordsStore = db.createObjectStore('records', { keyPath: 'id', autoIncrement: true });
+              recordsStore.createIndex('uId', 'uId', { unique: false });
+              recordsStore.createIndex('itemId', 'itemId', { unique: false });
+              recordsStore.createIndex('type', 'type', { unique: false });
+              recordsStore.createIndex('timestamp', 'timestamp', { unique: false });
+            }
+
+            // 5. price_history 表
+            if (!db.objectStoreNames.contains('price_history')) {
+              const priceHistoryStore = db.createObjectStore('price_history', { keyPath: 'id', autoIncrement: true });
+              priceHistoryStore.createIndex('itemId', 'itemId', { unique: false });
+              priceHistoryStore.createIndex('date', 'date', { unique: false });
+              priceHistoryStore.createIndex('price', 'price', { unique: false });
+            }
+
+            // 6. user_stats 表
+            if (!db.objectStoreNames.contains('user_stats')) {
+              const userStatsStore = db.createObjectStore('user_stats', { keyPath: 'uId' });
+              userStatsStore.createIndex('profitRate', 'profitRate', { unique: false });
+              userStatsStore.createIndex('totalInvestment', 'totalInvestment', { unique: false });
+              userStatsStore.createIndex('activeDays', 'activeDays', { unique: false });
+            }
+
+            // 7. pinyin_cache 表
+            if (!db.objectStoreNames.contains('pinyin_cache')) {
+              const pinyinCacheStore = db.createObjectStore('pinyin_cache', { keyPath: 'name' });
+              pinyinCacheStore.createIndex('pinyin', 'pinyin', { unique: false });
+              pinyinCacheStore.createIndex('initials', 'initials', { unique: false });
+            }
+
+            // 8. config 表
+            if (!db.objectStoreNames.contains('config')) {
+              const configStore = db.createObjectStore('config', { keyPath: 'key' });
+              configStore.createIndex('category', 'category', { unique: false });
+            }
+
+            console.log('✅ 数据库结构创建完成');
+          };
+        });
+      }
+
+      // 通用CRUD操作
+      async add(storeName, data) {
+        const tx = this.db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        return new Promise((resolve, reject) => {
+          const request = store.add(data);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async put(storeName, data) {
+        const tx = this.db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        return new Promise((resolve, reject) => {
+          const request = store.put(data);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async get(storeName, key) {
+        const tx = this.db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        return new Promise((resolve, reject) => {
+          const request = store.get(key);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async getAll(storeName) {
+        const tx = this.db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        return new Promise((resolve, reject) => {
+          const request = store.getAll();
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async delete(storeName, key) {
+        const tx = this.db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        return new Promise((resolve, reject) => {
+          const request = store.delete(key);
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async getByIndex(storeName, indexName, value) {
+        const tx = this.db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        const index = store.index(indexName);
+        return new Promise((resolve, reject) => {
+          const request = index.getAll(value);
+          request.onsuccess = () => resolve(request.result);
+          request.onerror = () => reject(request.error);
+        });
+      }
+
+      async clear(storeName) {
+        const tx = this.db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        return new Promise((resolve, reject) => {
+          const request = store.clear();
+          request.onsuccess = () => resolve();
+          request.onerror = () => reject(request.error);
+        });
+      }
+    }
+
+    // ==================== 用户管理器 ====================
+
+    class UserManager {
+      constructor(db) {
+        this.db = db;
+        this.currentUser = null;
+      }
+
+      async createUser(username, email = '', avatar = '') {
+        const user = {
+          uId: 'U' + Date.now() + Math.random().toString(36).substr(2, 9),
+          username,
+          email,
+          avatar,
+          createdAt: Date.now(),
+          lastLogin: Date.now(),
+          preferences: {
+            theme: 'auto',
+            language: 'zh-CN'
+          },
+          version: 1,
+          synced: false
+        };
+
+        await this.db.add('users', user);
+        console.log('✅ 用户创建成功:', user.username);
+        return user;
+      }
+
+      async login(uId) {
+        const user = await this.db.get('users', uId);
+        if (user) {
+          user.lastLogin = Date.now();
+          await this.db.put('users', user);
+          this.currentUser = user;
+          console.log('✅ 用户登录:', user.username);
+          return user;
+        }
+        throw new Error('用户不存在');
+      }
+
+      async getCurrentUser() {
+        return this.currentUser;
+      }
+
+      async getAllUsers() {
+        return await this.db.getAll('users');
+      }
+
+      async initDefaultUser() {
+        const users = await this.getAllUsers();
+        if (users.length === 0) {
+          const defaultUser = await this.createUser('默认用户', '', '');
+          await this.login(defaultUser.uId);
+          return defaultUser;
+        }
+        await this.login(users[0].uId);
+        return users[0];
+      }
+    }
+
+    // ==================== 道具管理器 ====================
+
+    class ItemManager {
+      constructor(db) {
+        this.db = db;
+      }
+
+      async createItem(itemData) {
+        const item = {
+          name: itemData.name,
+          price: itemData.price || 0,
+          basePrice: itemData.basePrice || itemData.price || 0,
+          marketTrend: 'stable',
+          category: itemData.category || '未分类',
+          subCategory: itemData.subCategory || '',
+          icon: itemData.icon || '',
+          rarityLevel: itemData.rarityLevel || '普通',
+          supply: 0,
+          demand: 0,
+          totalTransactions: 0,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+          priceUpdatedAt: Date.now()
+        };
+
+        const id = await this.db.add('items', item);
+        console.log('✅ 道具创建成功:', item.name);
+        return { ...item, id };
+      }
+
+      async updateItem(id, updates) {
+        const item = await this.db.get('items', id);
+        if (!item) throw new Error('道具不存在');
+
+        const updatedItem = {
+          ...item,
+          ...updates,
+          updatedAt: Date.now()
+        };
+
+        if (updates.price !== undefined) {
+          updatedItem.priceUpdatedAt = Date.now();
+          updatedItem.marketTrend = this.calculateTrend(item.price, updates.price);
+        }
+
+        await this.db.put('items', updatedItem);
+        return updatedItem;
+      }
+
+      async getItem(id) {
+        return await this.db.get('items', id);
+      }
+
+      async getAllItems() {
+        return await this.db.getAll('items');
+      }
+
+      async getItemByName(name) {
+        const items = await this.db.getByIndex('items', 'name', name);
+        return items[0] || null;
+      }
+
+      async deleteItem(id) {
+        await this.db.delete('items', id);
+      }
+
+      calculateTrend(oldPrice, newPrice) {
+        const change = ((newPrice - oldPrice) / oldPrice) * 100;
+        if (change > 5) return 'up';
+        if (change < -5) return 'down';
+        return 'stable';
+      }
+    }
+
+    // ==================== 持仓管理器 ====================
+
+    class HoldingManager {
+      constructor(db) {
+        this.db = db;
+      }
+
+      async buy(uId, itemId, quantity, price) {
+        const holdingId = `${uId}#${itemId}`;
+        let holding = await this.db.get('user_holdings', holdingId);
+
+        const batch = {
+          batchId: 'B' + Date.now(),
+          quantity,
+          price,
+          date: Date.now()
+        };
+
+        if (!holding) {
+          holding = {
+            holdingId,
+            uId,
+            itemId,
+            batches: [batch],
+            currentStock: quantity,
+            lockedStock: 0,
+            totalInvestment: quantity * price,
+            totalRevenue: 0,
+            averageCost: price,
+            averageSellPrice: 0,
+            profit: 0,
+            unrealizedProfit: 0,
+            profitRate: 0,
+            lastOperation: 'buy',
+            lastUpdated: Date.now(),
+            version: 1,
+            synced: false,
+            lastSyncTime: 0
+          };
+        } else {
+          holding.batches.push(batch);
+          holding.currentStock += quantity;
+          holding.totalInvestment += quantity * price;
+          holding.averageCost = holding.totalInvestment / holding.currentStock;
+          holding.lastOperation = 'buy';
+          holding.lastUpdated = Date.now();
+          holding.version += 1;
+        }
+
+        await this.db.put('user_holdings', holding);
+
+        // 记录交易
+        await app.recordManager.createRecord({
+          uId,
+          itemId,
+          type: 'buy',
+          quantity,
+          price,
+          totalAmount: quantity * price,
+          description: `买入 ${quantity} 个，单价 ${price}`
+        });
+
+        console.log('✅ 买入成功');
+        return holding;
+      }
+
+      async sell(uId, itemId, quantity, price) {
+        const holdingId = `${uId}#${itemId}`;
+        const holding = await this.db.get('user_holdings', holdingId);
+
+        if (!holding || holding.currentStock < quantity) {
+          throw new Error('库存不足');
+        }
+
+        const revenue = quantity * price;
+        const cost = quantity * holding.averageCost;
+        const profit = revenue - cost;
+
+        holding.currentStock -= quantity;
+        holding.totalRevenue += revenue;
+        holding.profit += profit;
+
+        if (holding.currentStock === 0) {
+          holding.averageCost = 0;
+          holding.batches = [];
+        }
+
+        holding.averageSellPrice = holding.totalRevenue / (holding.totalInvestment / holding.averageCost - holding.currentStock) || 0;
+        holding.profitRate = holding.totalInvestment > 0 ? (holding.profit / holding.totalInvestment) * 100 : 0;
+        holding.lastOperation = 'sell';
+        holding.lastUpdated = Date.now();
+        holding.version += 1;
+
+        await this.db.put('user_holdings', holding);
+
+        // 记录交易
+        await app.recordManager.createRecord({
+          uId,
+          itemId,
+          type: 'sell',
+          quantity,
+          price,
+          totalAmount: revenue,
+          description: `卖出 ${quantity} 个，单价 ${price}，利润 ${profit.toFixed(2)}`
+        });
+
+        console.log('✅ 卖出成功，利润:', profit);
+        return holding;
+      }
+
+      async getHolding(uId, itemId) {
+        const holdingId = `${uId}#${itemId}`;
+        return await this.db.get('user_holdings', holdingId);
+      }
+
+      async getUserHoldings(uId) {
+        return await this.db.getByIndex('user_holdings', 'uId', uId);
+      }
+
+      async updateUnrealizedProfit(uId, itemId, currentMarketPrice) {
+        const holdingId = `${uId}#${itemId}`;
+        const holding = await this.db.get('user_holdings', holdingId);
+
+        if (holding && holding.currentStock > 0) {
+          const currentValue = holding.currentStock * currentMarketPrice;
+          const cost = holding.currentStock * holding.averageCost;
+          holding.unrealizedProfit = currentValue - cost;
+          holding.lastUpdated = Date.now();
+
+          await this.db.put('user_holdings', holding);
+        }
+      }
+    }
+
+    // ==================== 交易记录管理器 ====================
+
+    class RecordManager {
+      constructor(db) {
+        this.db = db;
+      }
+
+      async createRecord(recordData) {
+        const record = {
+          uId: recordData.uId,
+          itemId: recordData.itemId,
+          type: recordData.type,
+          quantity: recordData.quantity,
+          price: recordData.price,
+          totalAmount: recordData.totalAmount,
+          timestamp: Date.now(),
+          description: recordData.description || '',
+          metadata: recordData.metadata || {}
+        };
+
+        const id = await this.db.add('records', record);
+        return { ...record, id };
+      }
+
+      async getUserRecords(uId, limit = 100) {
+        const records = await this.db.getByIndex('records', 'uId', uId);
+        return records.sort((a, b) => b.timestamp - a.timestamp).slice(0, limit);
+      }
+
+      async getItemRecords(itemId) {
+        return await this.db.getByIndex('records', 'itemId', itemId);
+      }
+    }
+
+    // ==================== 统计管理器 ====================
+
+    class StatsManager {
+      constructor(db) {
+        this.db = db;
+      }
+
+      async updateUserStats(uId) {
+        const holdings = await app.holdingManager.getUserHoldings(uId);
+        const records = await app.recordManager.getUserRecords(uId);
+
+        let totalInvestment = 0;
+        let totalRevenue = 0;
+        let totalProfit = 0;
+        let totalPotentialValue = 0;
+
+        for (const holding of holdings) {
+          totalInvestment += holding.totalInvestment;
+          totalRevenue += holding.totalRevenue;
+          totalProfit += holding.profit;
+
+          if (holding.currentStock > 0) {
+            const item = await app.itemManager.getItem(holding.itemId);
+            if (item) {
+              totalPotentialValue += holding.currentStock * item.price;
+            }
+          }
+        }
+
+        const potentialProfit = totalPotentialValue - holdings.reduce((sum, h) => sum + (h.currentStock * h.averageCost), 0);
+        const profitRate = totalInvestment > 0 ? ((totalProfit + potentialProfit) / totalInvestment) * 100 : 0;
+
+        const stats = {
+          uId,
+          totalInvestment,
+          totalRevenue,
+          totalProfit,
+          averageCost: totalInvestment / holdings.length || 0,
+          profitRate,
+          potentialProfit,
+          averagePrice: 0,
+          editCount: records.length,
+          maxPrice: 0,
+          minPrice: 0,
+          activeDays: this.calculateActiveDays(records),
+          avgOperationInterval: this.calculateAvgInterval(records),
+          lastOperationTime: records[0]?.timestamp || 0,
+          operationCount: records.length,
+          profitCycle: 0,
+          operationPreference: this.calculatePreference(records),
+          capitalFlow: {
+            inflow: totalInvestment,
+            outflow: totalRevenue
+          },
+          lastUpdated: Date.now()
+        };
+
+        await this.db.put('user_stats', stats);
+        return stats;
+      }
+
+      async getUserStats(uId) {
+        return await this.db.get('user_stats', uId);
+      }
+
+      calculateActiveDays(records) {
+        if (records.length === 0) return 0;
+        const days = new Set(records.map(r => new Date(r.timestamp).toDateString()));
+        return days.size;
+      }
+
+      calculateAvgInterval(records) {
+        if (records.length < 2) return 0;
+        const intervals = [];
+        for (let i = 1; i < records.length; i++) {
+          intervals.push(records[i-1].timestamp - records[i].timestamp);
+        }
+        return intervals.reduce((a, b) => a + b, 0) / intervals.length / 60000; // 分钟
+      }
+
+      calculatePreference(records) {
+        const buyCount = records.filter(r => r.type === 'buy').length;
+        const sellCount = records.filter(r => r.type === 'sell').length;
+        if (buyCount > sellCount) return '买入倾向';
+        if (sellCount > buyCount) return '卖出倾向';
+        return '均衡';
+      }
+    }
+
+    // ==================== UI管理器 ====================
+
+    class UIManager {
+      constructor(app) {
+        this.app = app;
+      }
+
+      async render() {
+        await this.renderStats();
+        await this.renderItems();
+      }
+
+      async renderStats() {
+        if (!this.app.currentUser) return;
+
+        const stats = await this.app.statsManager.getUserStats(this.app.currentUser.uId);
+        const holdings = await this.app.holdingManager.getUserHoldings(this.app.currentUser.uId);
+
+        let totalValue = 0;
+        for (const holding of holdings) {
+          if (holding.currentStock > 0) {
+            const item = await this.app.itemManager.getItem(holding.itemId);
+            if (item) {
+              totalValue += holding.currentStock * item.price;
+            }
+          }
+        }
+
+        document.getElementById('totalValue').textContent = '¥' + totalValue.toLocaleString();
+        document.getElementById('totalInvestment').textContent = '¥' + (stats?.totalInvestment || 0).toLocaleString();
+
+        const profit = totalValue - holdings.reduce((sum, h) => sum + (h.currentStock * h.averageCost), 0) + (stats?.totalProfit || 0);
+        document.getElementById('totalProfit').textContent = '¥' + profit.toLocaleString();
+        document.getElementById('totalProfit').className = 'stat-card-value ' + (profit >= 0 ? 'price-up' : 'price-down');
+
+        const profitRate = stats?.totalInvestment > 0 ? (profit / stats.totalInvestment * 100).toFixed(2) : '0.00';
+        document.getElementById('profitRate').textContent = profitRate + '%';
+        document.getElementById('profitRate').className = 'stat-card-value ' + (profit >= 0 ? 'price-up' : 'price-down');
+      }
+
+      async renderItems() {
+        const container = document.getElementById('itemsContainer');
+        const viewMode = document.getElementById('viewMode').value;
+        const searchKeyword = document.getElementById('searchInput').value.toLowerCase();
+        const categoryFilter = document.getElementById('categoryFilter').value;
+
+        let items = await this.app.itemManager.getAllItems();
+
+        // 筛选
+        if (searchKeyword) {
+          items = items.filter(item => item.name.toLowerCase().includes(searchKeyword));
+        }
+
+        if (categoryFilter) {
+          items = items.filter(item => item.category === categoryFilter);
+        }
+
+        // 视图模式
+        if (viewMode === 'holdings' && this.app.currentUser) {
+          const holdings = await this.app.holdingManager.getUserHoldings(this.app.currentUser.uId);
+          const holdingItemIds = holdings.filter(h => h.currentStock > 0).map(h => h.itemId);
+          items = items.filter(item => holdingItemIds.includes(item.id));
+        }
+
+        if (items.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state">
+              <div class="empty-icon">📦</div>
+              <div class="empty-text">暂无道具</div>
+              <div class="empty-hint">点击"添加道具"开始管理您的道具</div>
+            </div>
+          `;
+          return;
+        }
+
+        const grid = document.createElement('div');
+        grid.className = 'items-grid';
+
+        for (const item of items) {
+          const holding = this.app.currentUser
+            ? await this.app.holdingManager.getHolding(this.app.currentUser.uId, item.id)
+            : null;
+
+          const card = document.createElement('div');
+          card.className = 'item-card';
+          card.onclick = () => this.showItemDetail(item.id);
+
+          const trendIcon = item.marketTrend === 'up' ? '📈' : item.marketTrend === 'down' ? '📉' : '➡️';
+          const trendClass = item.marketTrend === 'up' ? 'price-up' : item.marketTrend === 'down' ? 'price-down' : 'price-neutral';
+
+          card.innerHTML = `
+            <div class="item-header">
+              <div class="item-icon">
+                ${item.icon ? `<img src="${item.icon}" alt="${item.name}">` : '🎮'}
+              </div>
+              <div class="item-info">
+                <div class="item-name">${item.name}</div>
+                <span class="item-category">${item.category}</span>
+              </div>
+            </div>
+            <div class="item-stats">
+              <div class="stat-item">
+                <div class="stat-label">市场价</div>
+                <div class="stat-value ${trendClass}">¥${item.price.toLocaleString()} ${trendIcon}</div>
+              </div>
+              <div class="stat-item">
+                <div class="stat-label">持仓</div>
+                <div class="stat-value">${holding?.currentStock || 0}</div>
+              </div>
+              ${holding && holding.currentStock > 0 ? `
+                <div class="stat-item">
+                  <div class="stat-label">成本价</div>
+                  <div class="stat-value">¥${holding.averageCost.toFixed(2)}</div>
+                </div>
+                <div class="stat-item">
+                  <div class="stat-label">收益率</div>
+                  <div class="stat-value ${holding.profitRate >= 0 ? 'price-up' : 'price-down'}">
+                    ${holding.profitRate.toFixed(2)}%
+                  </div>
+                </div>
+              ` : ''}
+            </div>
+          `;
+
+          grid.appendChild(card);
+        }
+
+        container.innerHTML = '';
+        container.appendChild(grid);
+      }
+
+      async showItemDetail(itemId) {
+        const item = await this.app.itemManager.getItem(itemId);
+        const holding = this.app.currentUser
+          ? await this.app.holdingManager.getHolding(this.app.currentUser.uId, itemId)
+          : null;
+
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay show';
+        modal.innerHTML = `
+          <div class="modal">
+            <div class="modal-header">
+              <div class="modal-title">${item.name}</div>
+              <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+            </div>
+            <div class="modal-body">
+              <div class="tabs">
+                <button class="tab active" onclick="app.ui.switchTab(this, 'info')">基本信息</button>
+                <button class="tab" onclick="app.ui.switchTab(this, 'trade')">交易</button>
+                <button class="tab" onclick="app.ui.switchTab(this, 'history')">历史记录</button>
+              </div>
+
+              <div class="tab-content active" id="tab-info">
+                <div class="form-group">
+                  <div class="form-label">分类</div>
+                  <div>${item.category} ${item.subCategory ? '> ' + item.subCategory : ''}</div>
+                </div>
+                <div class="form-group">
+                  <div class="form-label">市场价</div>
+                  <div style="font-size: 1.5rem; font-weight: 700; color: var(--accent);">¥${item.price.toLocaleString()}</div>
+                </div>
+                ${holding ? `
+                  <div class="form-group">
+                    <div class="form-label">持仓数量</div>
+                    <div style="font-size: 1.25rem; font-weight: 700;">${holding.currentStock}</div>
+                  </div>
+                  <div class="form-group">
+                    <div class="form-label">平均成本</div>
+                    <div>¥${holding.averageCost.toFixed(2)}</div>
+                  </div>
+                  <div class="form-group">
+                    <div class="form-label">持仓价值</div>
+                    <div style="font-size: 1.25rem; font-weight: 700;">¥${(holding.currentStock * item.price).toLocaleString()}</div>
+                  </div>
+                ` : ''}
+              </div>
+
+              <div class="tab-content" id="tab-trade">
+                <div class="form-group">
+                  <label class="form-label">操作类型</label>
+                  <select id="tradeType" class="form-input">
+                    <option value="buy">买入</option>
+                    <option value="sell">卖出</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">数量</label>
+                  <input type="number" id="tradeQuantity" class="form-input" min="1" value="1">
+                </div>
+                <div class="form-group">
+                  <label class="form-label">单价</label>
+                  <input type="number" id="tradePrice" class="form-input" value="${item.price}">
+                </div>
+                <div class="form-group">
+                  <div class="form-label">总金额</div>
+                  <div id="tradeTotal" style="font-size: 1.25rem; font-weight: 700;">¥0</div>
+                </div>
+                <button class="btn" onclick="app.ui.executeTrade(${itemId})">确认交易</button>
+              </div>
+
+              <div class="tab-content" id="tab-history">
+                <div id="recordsList">加载中...</div>
+              </div>
+            </div>
+          </div>
+        `;
+
+        document.getElementById('modalContainer').appendChild(modal);
+
+        // 自动计算总金额
+        modal.querySelector('#tradeQuantity').addEventListener('input', () => this.updateTradeTotal());
+        modal.querySelector('#tradePrice').addEventListener('input', () => this.updateTradeTotal());
+        this.updateTradeTotal();
+
+        // 加载历史记录
+        this.loadItemRecords(itemId);
+      }
+
+      switchTab(button, tabName) {
+        const modal = button.closest('.modal');
+        modal.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        modal.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+
+        button.classList.add('active');
+        modal.querySelector(`#tab-${tabName}`).classList.add('active');
+      }
+
+      updateTradeTotal() {
+        const quantity = parseInt(document.getElementById('tradeQuantity')?.value || 0);
+        const price = parseFloat(document.getElementById('tradePrice')?.value || 0);
+        const total = quantity * price;
+
+        const totalEl = document.getElementById('tradeTotal');
+        if (totalEl) {
+          totalEl.textContent = '¥' + total.toLocaleString();
+        }
+      }
+
+      async executeTrade(itemId) {
+        const type = document.getElementById('tradeType').value;
+        const quantity = parseInt(document.getElementById('tradeQuantity').value);
+        const price = parseFloat(document.getElementById('tradePrice').value);
+
+        if (!quantity || quantity <= 0 || !price || price <= 0) {
+          this.showToast('请输入有效的数量和价格', 'error');
+          return;
+        }
+
+        try {
+          if (type === 'buy') {
+            await this.app.holdingManager.buy(this.app.currentUser.uId, itemId, quantity, price);
+            this.showToast(`成功买入 ${quantity} 个`, 'success');
+          } else {
+            await this.app.holdingManager.sell(this.app.currentUser.uId, itemId, quantity, price);
+            this.showToast(`成功卖出 ${quantity} 个`, 'success');
+          }
+
+          await this.app.statsManager.updateUserStats(this.app.currentUser.uId);
+          await this.render();
+
+          document.querySelector('.modal-overlay')?.remove();
+        } catch (error) {
+          this.showToast(error.message, 'error');
+        }
+      }
+
+      async loadItemRecords(itemId) {
+        const records = await this.app.recordManager.getItemRecords(itemId);
+        const container = document.getElementById('recordsList');
+
+        if (records.length === 0) {
+          container.innerHTML = '<div style="text-align: center; padding: 2rem; opacity: 0.6;">暂无交易记录</div>';
+          return;
+        }
+
+        const sorted = records.sort((a, b) => b.timestamp - a.timestamp);
+        const html = sorted.map(r => {
+          const date = new Date(r.timestamp).toLocaleString();
+          const typeText = r.type === 'buy' ? '买入' : '卖出';
+          const typeColor = r.type === 'buy' ? 'var(--price-up)' : 'var(--price-down)';
+
+          return `
+            <div style="padding: 1rem; border-bottom: 1px solid var(--border);">
+              <div style="display: flex; justify-content: space-between; margin-bottom: 0.5rem;">
+                <span style="color: ${typeColor}; font-weight: 600;">${typeText}</span>
+                <span style="opacity: 0.6; font-size: 0.875rem;">${date}</span>
+              </div>
+              <div>${r.description}</div>
+            </div>
+          `;
+        }).join('');
+
+        container.innerHTML = html;
+      }
+
+      showAddItemModal() {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay show';
+        modal.innerHTML = `
+          <div class="modal">
+            <div class="modal-header">
+              <div class="modal-title">添加道具</div>
+              <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">道具名称 *</label>
+                <input type="text" id="itemName" class="form-input" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">分类 *</label>
+                <input type="text" id="itemCategory" class="form-input" value="装备" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">子分类</label>
+                <input type="text" id="itemSubCategory" class="form-input">
+              </div>
+              <div class="form-group">
+                <label class="form-label">市场价 *</label>
+                <input type="number" id="itemPrice" class="form-input" value="0" required>
+              </div>
+              <div class="form-group">
+                <label class="form-label">稀有度</label>
+                <select id="itemRarity" class="form-input">
+                  <option value="普通">普通</option>
+                  <option value="稀有">稀有</option>
+                  <option value="史诗">史诗</option>
+                  <option value="传说">传说</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">图标URL</label>
+                <input type="text" id="itemIcon" class="form-input" placeholder="https://...">
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">取消</button>
+              <button class="btn" onclick="app.ui.submitAddItem()">确定</button>
+            </div>
+          </div>
+        `;
+
+        document.getElementById('modalContainer').appendChild(modal);
+      }
+
+      async submitAddItem() {
+        const name = document.getElementById('itemName').value.trim();
+        const category = document.getElementById('itemCategory').value.trim();
+        const subCategory = document.getElementById('itemSubCategory').value.trim();
+        const price = parseFloat(document.getElementById('itemPrice').value);
+        const rarityLevel = document.getElementById('itemRarity').value;
+        const icon = document.getElementById('itemIcon').value.trim();
+
+        if (!name || !category || !price) {
+          this.showToast('请填写必填项', 'error');
+          return;
+        }
+
+        try {
+          await this.app.itemManager.createItem({
+            name,
+            category,
+            subCategory,
+            price,
+            rarityLevel,
+            icon
+          });
+
+          this.showToast('道具添加成功', 'success');
+          document.querySelector('.modal-overlay')?.remove();
+          await this.render();
+          await this.updateCategoryFilter();
+        } catch (error) {
+          this.showToast('添加失败: ' + error.message, 'error');
+        }
+      }
+
+      async updateCategoryFilter() {
+        const items = await this.app.itemManager.getAllItems();
+        const categories = [...new Set(items.map(item => item.category))];
+
+        const select = document.getElementById('categoryFilter');
+        select.innerHTML = '<option value="">全部分类</option>' +
+          categories.map(cat => `<option value="${cat}">${cat}</option>`).join('');
+      }
+
+      showUserMenu() {
+        this.showToast('用户管理功能开发中', 'info');
+      }
+
+      showSettings() {
+        const modal = document.createElement('div');
+        modal.className = 'modal-overlay show';
+        modal.innerHTML = `
+          <div class="modal">
+            <div class="modal-header">
+              <div class="modal-title">系统设置</div>
+              <button class="modal-close" onclick="this.closest('.modal-overlay').remove()">✕</button>
+            </div>
+            <div class="modal-body">
+              <div class="form-group">
+                <label class="form-label">主题</label>
+                <select id="themeSelect" class="form-input">
+                  <option value="auto">跟随系统</option>
+                  <option value="light">明亮</option>
+                  <option value="dark">深色</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label class="form-label">当前用户</label>
+                <div style="padding: 1rem; background: var(--bg); border-radius: var(--radius);">
+                  ${this.app.currentUser?.username || '未登录'}
+                </div>
+              </div>
+            </div>
+            <div class="modal-footer">
+              <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">关闭</button>
+              <button class="btn" onclick="app.ui.saveSettings()">保存</button>
+            </div>
+          </div>
+        `;
+
+        document.getElementById('modalContainer').appendChild(modal);
+
+        const currentTheme = localStorage.getItem('game_trader_v2_theme') || 'auto';
+        document.getElementById('themeSelect').value = currentTheme;
+      }
+
+      saveSettings() {
+        const theme = document.getElementById('themeSelect').value;
+        window.ThemeManager.setTheme(theme);
+        this.showToast('设置已保存', 'success');
+        document.querySelector('.modal-overlay')?.remove();
+      }
+
+      showToast(message, type = 'info') {
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        toast.innerHTML = `
+          <div style="font-weight: 600;">${message}</div>
+        `;
+
+        document.body.appendChild(toast);
+
+        setTimeout(() => {
+          toast.style.animation = 'slideIn 0.3s ease reverse';
+          setTimeout(() => toast.remove(), 300);
+        }, 3000);
+      }
+    }
+
+    // ==================== 应用主类 ====================
+
+    class App {
+      constructor() {
+        this.db = null;
+        this.userManager = null;
+        this.itemManager = null;
+        this.holdingManager = null;
+        this.recordManager = null;
+        this.statsManager = null;
+        this.ui = null;
+        this.currentUser = null;
+      }
+
+      async init() {
+        console.log('🚀 初始化应用...');
+
+        // 初始化数据库
+        this.db = new DatabaseManager();
+        await this.db.init();
+
+        // 初始化管理器
+        this.userManager = new UserManager(this.db);
+        this.itemManager = new ItemManager(this.db);
+        this.holdingManager = new HoldingManager(this.db);
+        this.recordManager = new RecordManager(this.db);
+        this.statsManager = new StatsManager(this.db);
+
+        // 初始化默认用户
+        this.currentUser = await this.userManager.initDefaultUser();
+
+        // 初始化统计
+        await this.statsManager.updateUserStats(this.currentUser.uId);
+
+        // 初始化UI
+        this.ui = new UIManager(this);
+
+        // 更新用户显示
+        document.getElementById('userName').textContent = this.currentUser.username;
+        document.getElementById('userAvatar').textContent = this.currentUser.username[0].toUpperCase();
+
+        // 绑定事件
+        document.getElementById('searchInput').addEventListener('input', () => this.ui.render());
+        document.getElementById('categoryFilter').addEventListener('change', () => this.ui.render());
+        document.getElementById('viewMode').addEventListener('change', () => this.ui.render());
+
+        // 渲染
+        await this.ui.updateCategoryFilter();
+        await this.ui.render();
+
+        console.log('✅ 应用初始化完成');
+      }
+    }
+
+    // ==================== 启动应用 ====================
+
+    const app = new App();
+
+    window.addEventListener('DOMContentLoaded', async () => {
+      try {
+        await app.init();
+      } catch (error) {
+        console.error('❌ 应用初始化失败:', error);
+        document.body.innerHTML = `
+          <div style="display: flex; align-items: center; justify-content: center; min-height: 100vh; flex-direction: column; gap: 1rem;">
+            <div style="font-size: 4rem;">😢</div>
+            <div style="font-size: 1.5rem; font-weight: 600;">应用初始化失败</div>
+            <div style="opacity: 0.6;">${error.message}</div>
+            <button class="btn" onclick="location.reload()">重新加载</button>
+          </div>
+        `;
+      }
+    });
+  </script>
+</body>
+</html>
