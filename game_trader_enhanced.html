@@ -8198,13 +8198,6 @@
           itemsStore.createIndex('marketTrend', 'marketTrend', { unique: false });
           itemsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
           console.log('✅ 创建 items 表');
-        } else if (oldVersion < 5) {
-          // 如果是从旧版本升级，需要添加新索引
-          const transaction = db.transaction || event.target.transaction;
-          const itemsStore = transaction.objectStore(CONFIG.STORE_ITEMS);
-          if (!itemsStore.indexNames.contains('marketTrend')) {
-            itemsStore.createIndex('marketTrend', 'marketTrend', { unique: false });
-          }
         }
 
         // 3. user_holdings 表（用户持仓）
@@ -8311,10 +8304,11 @@
       // ==================== 道具相关操作 ====================
 
       /**
-       * 保存道具（兼容旧接口）
+       * 保存道具（数据转换适配器）
+       * 将前端数据格式转换为新的8表结构并保存
        */
       async saveItem(item) {
-        // 将旧格式的item数据拆分保存到新的8表结构
+        // 将前端item数据拆分保存到新的8表结构
 
         const itemId = item.id || await this._getNextItemId();
 
@@ -8339,19 +8333,19 @@
         };
         await this.put(CONFIG.STORE_ITEMS, itemData);
 
-        // 2. 保存持仓到user_holdings表
-        if (item.stock !== undefined && item.stock > 0) {
+        // 2. 保存持仓到user_holdings表 - 从inventory结构读取
+        if (item.inventory && item.inventory.currentStock !== undefined) {
           const holdingId = `${this.currentUserId}#${itemId}`;
           const holding = {
             holdingId,
             uId: this.currentUserId,
             itemId,
-            batches: item.batches || [],
-            currentStock: item.stock,
+            batches: item.inventory.batches || [],
+            currentStock: item.inventory.currentStock,
             lockedStock: 0,
-            totalInvestment: item.totalInvestment || 0,
+            totalInvestment: item.inventory.totalInvestment || 0,
             totalRevenue: 0,
-            averageCost: item.averageCost || 0,
+            averageCost: item.inventory.averageCost || 0,
             averageSellPrice: 0,
             profit: 0,
             unrealizedProfit: 0,
@@ -8404,7 +8398,8 @@
       }
 
       /**
-       * 批量保存数据（兼容旧接口）
+       * 批量保存数据（数据转换适配器）
+       * 将多个前端数据格式转换为新的8表结构并保存
        */
       async bulkSave(items) {
         console.log(`📊 批量保存 ${items.length} 个道具到8表结构...`);
@@ -8635,11 +8630,18 @@
               isFavorite: item.isFavorite || false,
               rarityLevel: item.rarityLevel,
 
-              // 持仓信息
-              stock: holding ? holding.currentStock : 0,
-              batches: holding ? holding.batches : [],
-              totalInvestment: holding ? holding.totalInvestment : 0,
-              averageCost: holding ? holding.averageCost : 0,
+              // 持仓信息 - 使用inventory结构（与UI层一致）
+              inventory: holding ? {
+                currentStock: holding.currentStock,
+                totalInvestment: holding.totalInvestment,
+                averageCost: holding.averageCost,
+                operationHistory: [] // 操作历史从内存维护，不持久化
+              } : {
+                currentStock: 0,
+                totalInvestment: 0,
+                averageCost: 0,
+                operationHistory: []
+              },
 
               // 价格历史
               history: history,
@@ -8729,25 +8731,6 @@
 
           await this.db.put(CONFIG.STORE_USERS, userData);
           console.log('✅ 默认用户创建成功');
-
-          // 同时在config表中保留旧的用户昵称数据（向后兼容）
-          for (let i = 1; i <= 5; i++) {
-            const oldUserData = {
-              key: i.toString(),
-              value: {
-                nickname: `用户昵称${i}`,
-                avatar: '',
-                createdAt: new Date().toISOString(),
-                updatedAt: new Date().toISOString(),
-                theme: 'auto',
-                language: 'zh',
-                timezone: 'Asia/Shanghai'
-              }
-            };
-
-            await this.saveConfig(i.toString(), oldUserData.value);
-          }
-
           console.log('✅ 用户数据初始化完成');
         }
       }
@@ -9205,9 +9188,6 @@
 
         // 创建DOM缓存
         this.domCache = Utils.createDOMCache();
-
-        // 预加载常用图标
-        this.preloadCommonIcons();
 
         // 使用节流的缓存清理（每10分钟）
         this.cacheCleanupInterval = setInterval(
@@ -10617,12 +10597,7 @@
         card.style.backgroundRepeat = '';
         card.style.backgroundPosition = '';
       }
-      
-      preloadCommonIcons() {
-        // 不再预加载默认图标，因为现在不使用默认图标
-        // 这个函数保留是为了兼容性，但不执行任何操作
-      }
-      
+
       // 清理过期的缓存条目
       cleanIconCache() {
         const now = Date.now();
@@ -11879,20 +11854,26 @@
           this.showToast('数据已更新', '✅', 'success', item);
         } else {
           const newItem = {
-            name, 
-            price, 
+            name,
+            price,
             history: [{close: price, date: Utils.getCurrentDateTime()}],
-            isFavorite: false  // 默认不收藏
+            isFavorite: false,  // 默认不收藏
+            inventory: {  // 初始化库存结构
+              currentStock: 0,
+              totalInvestment: 0,
+              averageCost: 0,
+              operationHistory: []
+            }
           };
-          
+
           if (cat) {
             newItem.category = cat;
             if (subCat) newItem.subCategory = subCat;
           }
-          
+
           // 总是设置icon属性，如果没有填写图标就设置为空字符串
           newItem.icon = icon || '';
-          
+
           this.state.data.push(newItem);
           this.showToast('数据已添加', '✅', 'success', newItem);
         }
@@ -14294,15 +14275,6 @@
         });
       }
 
-
-      /*  兼容性方法 - 保持向后兼容
-      addSearchShake() { this.addSearchAnimation('shake'); }//清除搜索时
-      addSearchPulse() { this.addSearchAnimation('pulse'); }//快速输入时
-      addSearchWarning() { this.addSearchAnimation('warning'); }//连续快速输入
-      addSearchNoResult() { this.addSearchAnimation('no-result'); }//无结果时 
-      */
-
-
       // 生成无匹配结果的动画化HTML
       generateNoResultsHTML(searchKeyword) {
         const hasKeyword = searchKeyword && searchKeyword.trim() !== '';
@@ -15469,7 +15441,7 @@
         console.log('📊 生成的图表数据:', chartData);
         console.log('📊 价格数据详情:', {
           prices: chartData.prices,
-          lastPrice: chartData.prices[chartData.prices.length - 1],
+          lastPrice: chartData.prices && chartData.prices.length > 0 ? chartData.prices[chartData.prices.length - 1] : 0,
           currentItemPrice: item.price
         });
         
@@ -15699,13 +15671,13 @@
               }
               if (params && params.length > 0) {
                 const dataIndex = params[0].dataIndex;
-                const fullDate = chartData.fullDates[dataIndex];
-                const currentStock = chartData.stock[dataIndex] || 0;
-                const currentPrice = chartData.prices[dataIndex] || 0;
-                const currentValue = chartData.holdingValues[dataIndex] || 0;
-                const buyOps = chartData.buyOperations[dataIndex] || 0;
-                const sellOps = chartData.sellOperations[dataIndex] || 0;
-                const profit = chartData.profits[dataIndex] || 0;
+                const fullDate = (chartData.fullDates && chartData.fullDates[dataIndex]) || '';
+                const currentStock = (chartData.stock && chartData.stock[dataIndex]) || 0;
+                const currentPrice = (chartData.prices && chartData.prices[dataIndex]) || 0;
+                const currentValue = (chartData.holdingValues && chartData.holdingValues[dataIndex]) || 0;
+                const buyOps = (chartData.buyOperations && chartData.buyOperations[dataIndex]) || 0;
+                const sellOps = (chartData.sellOperations && chartData.sellOperations[dataIndex]) || 0;
+                const profit = (chartData.profits && chartData.profits[dataIndex]) || 0;
                 
                 const borderColor = isDarkMode ? 'rgba(226, 232, 240, 0.2)' : 'rgba(255, 255, 255, 0.2)';
                 const badgeBg = isDarkMode ? 'rgba(226, 232, 240, 0.1)' : 'rgba(255, 255, 255, 0.1)';
@@ -15972,20 +15944,27 @@
             hasChartData: !!item.inventory.chartData,
             chartDataLength: item.inventory.chartData?.dates?.length || 0
           });
-          
+
           const chartData = item.inventory.chartData;
-          const dataLength = Math.min(days, chartData.dates.length);
-          
-          return {
-            dates: chartData.dates.slice(-dataLength),
-            fullDates: chartData.fullDates.slice(-dataLength),
-            stock: chartData.stock.slice(-dataLength),
-            prices: chartData.prices.slice(-dataLength),
-            profits: chartData.profits.slice(-dataLength),
-            buyOperations: chartData.buyOperations.slice(-dataLength),
-            sellOperations: chartData.sellOperations.slice(-dataLength),
-            holdingValues: chartData.holdingValues.slice(-dataLength)
-          };
+
+          // 检查 chartData 的完整性
+          if (!chartData.dates || !Array.isArray(chartData.dates)) {
+            console.warn('⚠️ 预生成的图表数据不完整，清除并使用历史记录');
+            delete item.inventory.chartData;
+          } else {
+            const dataLength = Math.min(days, chartData.dates.length);
+
+            return {
+              dates: chartData.dates.slice(-dataLength),
+              fullDates: (chartData.fullDates || []).slice(-dataLength),
+              stock: (chartData.stock || []).slice(-dataLength),
+              prices: (chartData.prices || []).slice(-dataLength),
+              profits: (chartData.profits || []).slice(-dataLength),
+              buyOperations: (chartData.buyOperations || []).slice(-dataLength),
+              sellOperations: (chartData.sellOperations || []).slice(-dataLength),
+              holdingValues: (chartData.holdingValues || []).slice(-dataLength)
+            };
+          }
         }
         
         // 根据操作历史生成真实数据
@@ -16159,13 +16138,13 @@
         }
         
         const dataIndex = params.dataIndex;
-        const fullDate = chartData.fullDates[dataIndex];
-        const currentStock = chartData.stock[dataIndex] || 0;
-        const currentPrice = chartData.prices[dataIndex] || 0;
-        const currentValue = chartData.holdingValues[dataIndex] || 0;
-        const buyOps = chartData.buyOperations[dataIndex] || 0;
-        const sellOps = chartData.sellOperations[dataIndex] || 0;
-        const profit = chartData.profits[dataIndex] || 0;
+        const fullDate = (chartData.fullDates && chartData.fullDates[dataIndex]) || '';
+        const currentStock = (chartData.stock && chartData.stock[dataIndex]) || 0;
+        const currentPrice = (chartData.prices && chartData.prices[dataIndex]) || 0;
+        const currentValue = (chartData.holdingValues && chartData.holdingValues[dataIndex]) || 0;
+        const buyOps = (chartData.buyOperations && chartData.buyOperations[dataIndex]) || 0;
+        const sellOps = (chartData.sellOperations && chartData.sellOperations[dataIndex]) || 0;
+        const profit = (chartData.profits && chartData.profits[dataIndex]) || 0;
         
         // 先显示提示框以获取准确高度
         tooltipEl.style.display = 'block';
