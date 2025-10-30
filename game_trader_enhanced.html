@@ -7662,6 +7662,27 @@
         const d = new Date();
         return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
       },
+
+      // 格式化时间戳为日期字符串（只显示日期）
+      formatDate(timestamp) {
+        if (!timestamp) return '-';
+        const d = new Date(timestamp);
+        return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+      },
+
+      // 格式化时间戳为完整日期时间字符串
+      formatDateTime(timestamp) {
+        if (!timestamp) return '-';
+        const d = new Date(timestamp);
+        return `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
+      },
+
+      // 格式化时间戳为短日期（MM/DD）
+      formatShortDate(timestamp) {
+        if (!timestamp) return '-';
+        const d = new Date(timestamp);
+        return `${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')}`;
+      },
       
       calcChange(hist) {
         if (!hist?.length || hist.length < 2) return {change: 0, percent: 0};
@@ -9591,7 +9612,7 @@
                     <div class="stat-card stat-high">
                       <span class="stat-icon">📈</span>
                       <div class="stat-info">
-                        <div class="stat-label">最高价 <span class="stat-date">${stats.max.date.split(' ')[0]}</span></div>
+                        <div class="stat-label">最高价 <span class="stat-date">${Utils.formatDate(stats.max.date)}</span></div>
                         <div class="stat-value" style="color:${Utils.getPriceColor(stats.max.price, isDark)}">¥${Utils.formatPrice(stats.max.price, this.state.enableFormatPrice)}</div>
                       </div>
                     </div>
@@ -9599,7 +9620,7 @@
                     <div class="stat-card stat-low">
                       <span class="stat-icon">📉</span>
                       <div class="stat-info">
-                        <div class="stat-label">最低价 <span class="stat-date">${stats.min.date.split(' ')[0]}</span></div>
+                        <div class="stat-label">最低价 <span class="stat-date">${Utils.formatDate(stats.min.date)}</span></div>
                         <div class="stat-value" style="color:${Utils.getPriceColor(stats.min.price, isDark)}">¥${Utils.formatPrice(stats.min.price, this.state.enableFormatPrice)}</div>
                       </div>
                     </div>
@@ -10964,7 +10985,7 @@
               <div class="stat-card stat-high">
                 <span class="stat-icon">📈</span>
                 <div class="stat-info">
-                  <div class="stat-label">最高价 <span class="stat-date">${stats.max.date.split(' ')[0]}</span></div>
+                  <div class="stat-label">最高价 <span class="stat-date">${Utils.formatDate(stats.max.date)}</span></div>
                   <div class="stat-value" style="color:${Utils.getPriceColor(stats.max.price, isDark)}">¥${Utils.formatPrice(stats.max.price, this.state.enableFormatPrice)}</div>
                 </div>
               </div>
@@ -10972,7 +10993,7 @@
               <div class="stat-card stat-low">
                 <span class="stat-icon">📉</span>
                 <div class="stat-info">
-                  <div class="stat-label">最低价 <span class="stat-date">${stats.min.date.split(' ')[0]}</span></div>
+                  <div class="stat-label">最低价 <span class="stat-date">${Utils.formatDate(stats.min.date)}</span></div>
                   <div class="stat-value" style="color:${Utils.getPriceColor(stats.min.price, isDark)}">¥${Utils.formatPrice(stats.min.price, this.state.enableFormatPrice)}</div>
                 </div>
               </div>
@@ -11071,7 +11092,7 @@
           const oldPrice = item.price || 0;
           item.price = newPrice;
           item.history = item.history || [];
-          item.history.push({close: newPrice, date: Utils.getCurrentDateTime()});
+          item.history.push({close: newPrice, date: Date.now()});
 
           // 记录价格变动到操作历史
           if (oldPrice !== newPrice) {
@@ -11324,8 +11345,8 @@
         const hist = item.history || [];
         const maxPoints = 100;
         const displayHist = hist.length > maxPoints ? hist.slice(-maxPoints) : hist;
-        
-        const dates = displayHist.map(h => h.date.split(' ')[0].split('/').slice(1).join('/'));
+
+        const dates = displayHist.map(h => Utils.formatShortDate(h.date));
         const prices = displayHist.map(h => h.close);
         
         const priceData = prices.map((price, i) => {
@@ -11366,7 +11387,7 @@
               if (!params?.[0]) return '';
               const i = params[0].dataIndex;
               const cur = prices[i];
-              const fullDateTime = displayHist[i].date;
+              const fullDateTime = Utils.formatDateTime(displayHist[i].date);
               
               if (isMobile) {
                 this.updateMobileTooltip(i, cur, fullDateTime, prices, displayHist, stats, isDark, upColor, downColor);
@@ -11581,7 +11602,7 @@
             if (params.componentType === 'series' && params.seriesType === 'line') {
               const dataIndex = params.dataIndex;
               const confirmed = await this.showConfirmDialog(
-                `确定要删除 ${displayHist[dataIndex].date} 的价格记录吗？\n\n价格: ¥${displayHist[dataIndex].close}`,
+                `确定要删除 ${Utils.formatDateTime(displayHist[dataIndex].date)} 的价格记录吗？\n\n价格: ¥${displayHist[dataIndex].close}`,
                 '删除价格记录',
                 '删除',
                 '取消'
@@ -11878,13 +11899,13 @@
           item.icon = icon || '';
           
           item.history = item.history || [];
-          item.history.push({close: price, date: Utils.getCurrentDateTime()});
+          item.history.push({close: price, date: Date.now()});
           this.showToast('数据已更新', '✅', 'success', item);
         } else {
           const newItem = {
             name,
             price,
-            history: [{close: price, date: Utils.getCurrentDateTime()}],
+            history: [{close: price, date: Date.now()}],
             isFavorite: false,  // 默认不收藏
             inventory: {  // 初始化库存结构
               currentStock: 0,
@@ -12583,7 +12604,7 @@
       exportDataCsv() {
         let csv = '\uFEFF道具名称,当前价格,一级分类,二级分类,历史数据\n';
         this.state.data.forEach(item => {
-          const histStr = item.history ? item.history.map(h => `${h.date}:${h.close}`).join(';') : '';
+          const histStr = item.history ? item.history.map(h => `${Utils.formatDateTime(h.date)}:${h.close}`).join(';') : '';
           csv += `"${item.name}","${item.price || 0}","${item.category || '未分类'}","${item.subCategory || ''}","${histStr}"\n`;
         });
         const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
@@ -12939,7 +12960,7 @@
         let userData = await this.state.db.get(CONFIG.STORE_CONFIG, userKey);
         
         // 创建或更新用户数据
-        const now = new Date().toISOString();
+        const now = Date.now();
         if (!userData || !userData.value) {
           // 新用户，设置创建时间
           const newUserData = {
@@ -13013,8 +13034,8 @@
         return {
           nickname: `用户${userId}`,
           avatar: '',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
           theme: 'auto',
           language: 'zh',
           timezone: 'Asia/Shanghai'
@@ -13260,7 +13281,7 @@
         document.getElementById('exportCsvBtn').addEventListener('click', () => {
           let csv = '\uFEFF道具名称,当前价格,一级分类,二级分类,历史数据\n';
           this.state.data.forEach(item => {
-            const histStr = item.history ? item.history.map(h => `${h.date}:${h.close}`).join(';') : '';
+            const histStr = item.history ? item.history.map(h => `${Utils.formatDateTime(h.date)}:${h.close}`).join(';') : '';
             csv += `"${item.name}","${item.price || 0}","${item.category || '未分类'}","${item.subCategory || ''}","${histStr}"\n`;
           });
           const blob = new Blob([csv], {type: 'text/csv;charset=utf-8;'});
@@ -13881,9 +13902,8 @@
         for (let j = startDays; j >= startDays - recordCount + 1; j--) {
           const d = new Date(now);
           d.setDate(d.getDate() - j);
-          const ds = `${d.getFullYear()}/${String(d.getMonth() + 1).padStart(2, '0')}/${String(d.getDate()).padStart(2, '0')} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}:${String(d.getSeconds()).padStart(2, '0')}`;
           price = Math.max(20, Math.floor(price * (1 + (Math.random() - 0.5) * 0.2)));
-          hist.push({close: price, date: ds});
+          hist.push({close: price, date: d.getTime()});
         }
         
         return hist;
@@ -15282,9 +15302,9 @@
         priceStatsAvg.textContent = `¥${Utils.formatPrice(avgPrice, this.state.enableFormatPrice)}`;
         priceStatsCount.textContent = item.history.length.toString();
         priceStatsMax.textContent = `¥${Utils.formatPrice(maxPrice, this.state.enableFormatPrice)}`;
-        priceStatsMaxDate.textContent = maxPriceRecord ? maxPriceRecord.date.split(' ')[0] : '-';
+        priceStatsMaxDate.textContent = maxPriceRecord ? Utils.formatDate(maxPriceRecord.date) : '-';
         priceStatsMin.textContent = `¥${Utils.formatPrice(minPrice, this.state.enableFormatPrice)}`;
-        priceStatsMinDate.textContent = minPriceRecord ? minPriceRecord.date.split(' ')[0] : '-';
+        priceStatsMinDate.textContent = minPriceRecord ? Utils.formatDate(minPriceRecord.date) : '-';
       }
       
       updateInventoryChartAfterOperation(item, modal) {
@@ -17057,8 +17077,8 @@
         
         shareText += `📊 价格统计\n`;
         shareText += `• 平均价格: ¥${Utils.formatPrice(stats.avg, this.state.enableFormatPrice)}\n`;
-        shareText += `• 最高价格: ¥${Utils.formatPrice(stats.max.price, this.state.enableFormatPrice)} (${stats.max.date.split(' ')[0]})\n`;
-        shareText += `• 最低价格: ¥${Utils.formatPrice(stats.min.price, this.state.enableFormatPrice)} (${stats.min.date.split(' ')[0]})\n`;
+        shareText += `• 最高价格: ¥${Utils.formatPrice(stats.max.price, this.state.enableFormatPrice)} (${Utils.formatDate(stats.max.date)})\n`;
+        shareText += `• 最低价格: ¥${Utils.formatPrice(stats.min.price, this.state.enableFormatPrice)} (${Utils.formatDate(stats.min.date)})\n`;
         shareText += `• 价格变动: ${priceData.changePercent}% (${priceData.change > 0 ? '上涨' : '下跌'} ¥${Utils.formatPrice(Math.abs(priceData.change), this.state.enableFormatPrice)})\n`;
         shareText += `• 记录次数: ${stats.count} 次\n\n`;
         
