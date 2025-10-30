@@ -15428,7 +15428,7 @@
         console.log('📊 生成的图表数据:', chartData);
         console.log('📊 价格数据详情:', {
           prices: chartData.prices,
-          lastPrice: chartData.prices[chartData.prices.length - 1],
+          lastPrice: chartData.prices && chartData.prices.length > 0 ? chartData.prices[chartData.prices.length - 1] : 0,
           currentItemPrice: item.price
         });
         
@@ -15658,13 +15658,13 @@
               }
               if (params && params.length > 0) {
                 const dataIndex = params[0].dataIndex;
-                const fullDate = chartData.fullDates[dataIndex];
-                const currentStock = chartData.stock[dataIndex] || 0;
-                const currentPrice = chartData.prices[dataIndex] || 0;
-                const currentValue = chartData.holdingValues[dataIndex] || 0;
-                const buyOps = chartData.buyOperations[dataIndex] || 0;
-                const sellOps = chartData.sellOperations[dataIndex] || 0;
-                const profit = chartData.profits[dataIndex] || 0;
+                const fullDate = (chartData.fullDates && chartData.fullDates[dataIndex]) || '';
+                const currentStock = (chartData.stock && chartData.stock[dataIndex]) || 0;
+                const currentPrice = (chartData.prices && chartData.prices[dataIndex]) || 0;
+                const currentValue = (chartData.holdingValues && chartData.holdingValues[dataIndex]) || 0;
+                const buyOps = (chartData.buyOperations && chartData.buyOperations[dataIndex]) || 0;
+                const sellOps = (chartData.sellOperations && chartData.sellOperations[dataIndex]) || 0;
+                const profit = (chartData.profits && chartData.profits[dataIndex]) || 0;
                 
                 const borderColor = isDarkMode ? 'rgba(226, 232, 240, 0.2)' : 'rgba(255, 255, 255, 0.2)';
                 const badgeBg = isDarkMode ? 'rgba(226, 232, 240, 0.1)' : 'rgba(255, 255, 255, 0.1)';
@@ -15931,20 +15931,27 @@
             hasChartData: !!item.inventory.chartData,
             chartDataLength: item.inventory.chartData?.dates?.length || 0
           });
-          
+
           const chartData = item.inventory.chartData;
-          const dataLength = Math.min(days, chartData.dates.length);
-          
-          return {
-            dates: chartData.dates.slice(-dataLength),
-            fullDates: chartData.fullDates.slice(-dataLength),
-            stock: chartData.stock.slice(-dataLength),
-            prices: chartData.prices.slice(-dataLength),
-            profits: chartData.profits.slice(-dataLength),
-            buyOperations: chartData.buyOperations.slice(-dataLength),
-            sellOperations: chartData.sellOperations.slice(-dataLength),
-            holdingValues: chartData.holdingValues.slice(-dataLength)
-          };
+
+          // 检查 chartData 的完整性
+          if (!chartData.dates || !Array.isArray(chartData.dates)) {
+            console.warn('⚠️ 预生成的图表数据不完整，清除并使用历史记录');
+            delete item.inventory.chartData;
+          } else {
+            const dataLength = Math.min(days, chartData.dates.length);
+
+            return {
+              dates: chartData.dates.slice(-dataLength),
+              fullDates: (chartData.fullDates || []).slice(-dataLength),
+              stock: (chartData.stock || []).slice(-dataLength),
+              prices: (chartData.prices || []).slice(-dataLength),
+              profits: (chartData.profits || []).slice(-dataLength),
+              buyOperations: (chartData.buyOperations || []).slice(-dataLength),
+              sellOperations: (chartData.sellOperations || []).slice(-dataLength),
+              holdingValues: (chartData.holdingValues || []).slice(-dataLength)
+            };
+          }
         }
         
         // 根据操作历史生成真实数据
@@ -16118,13 +16125,13 @@
         }
         
         const dataIndex = params.dataIndex;
-        const fullDate = chartData.fullDates[dataIndex];
-        const currentStock = chartData.stock[dataIndex] || 0;
-        const currentPrice = chartData.prices[dataIndex] || 0;
-        const currentValue = chartData.holdingValues[dataIndex] || 0;
-        const buyOps = chartData.buyOperations[dataIndex] || 0;
-        const sellOps = chartData.sellOperations[dataIndex] || 0;
-        const profit = chartData.profits[dataIndex] || 0;
+        const fullDate = (chartData.fullDates && chartData.fullDates[dataIndex]) || '';
+        const currentStock = (chartData.stock && chartData.stock[dataIndex]) || 0;
+        const currentPrice = (chartData.prices && chartData.prices[dataIndex]) || 0;
+        const currentValue = (chartData.holdingValues && chartData.holdingValues[dataIndex]) || 0;
+        const buyOps = (chartData.buyOperations && chartData.buyOperations[dataIndex]) || 0;
+        const sellOps = (chartData.sellOperations && chartData.sellOperations[dataIndex]) || 0;
+        const profit = (chartData.profits && chartData.profits[dataIndex]) || 0;
         
         // 先显示提示框以获取准确高度
         tooltipEl.style.display = 'block';
