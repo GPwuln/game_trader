@@ -10474,21 +10474,28 @@
       }
       
       async toggleFavorite(item) {
+        // 从全局dataMap获取item对象，确保操作的是全局属性
+        const globalItem = this.state.dataMap.get(item.name);
+        if (!globalItem) {
+          console.error('无法找到全局item对象:', item.name);
+          return;
+        }
+
         // 切换收藏状态
-        item.isFavorite = !item.isFavorite;
-        
+        globalItem.isFavorite = !globalItem.isFavorite;
+
         // 保存到数据库
-        await this.state.saveItemQuick(item);
-        
+        await this.state.saveItemQuick(globalItem);
+
         // 更新UI
-        this.updateFavoriteButton(item);
-        
+        this.updateFavoriteButton(globalItem);
+
         // 直接更新模态框中的收藏按钮（如果模态框打开）
         const modal = document.querySelector('.item-detail-modal');
         if (modal) {
           const modalFavoriteBtn = modal.querySelector('#favoriteBtn');
           if (modalFavoriteBtn) {
-            if (item.isFavorite) {
+            if (globalItem.isFavorite) {
               modalFavoriteBtn.classList.add('favorited');
               modalFavoriteBtn.textContent = '❤️';
               modalFavoriteBtn.title = '已收藏';
@@ -10499,13 +10506,13 @@
             }
           }
         }
-        
+
         this.renderCategories(); // 更新分类计数
-        
+
         // 显示提示
-        const message = item.isFavorite ? '已添加到收藏' : '已取消收藏';
-        const icon = item.isFavorite ? '❤️' : '🤍';
-        this.showToast(message, icon, 'success', item);
+        const message = globalItem.isFavorite ? '已添加到收藏' : '已取消收藏';
+        const icon = globalItem.isFavorite ? '❤️' : '🤍';
+        this.showToast(message, icon, 'success', globalItem);
       }
       
       updateFavoriteButton(item) {
@@ -17001,29 +17008,36 @@
         setTimeout(() => {
           favoriteBtn.style.transform = '';
         }, 150);
-        
+
+        // 从全局dataMap获取item对象，确保操作的是全局属性
+        const globalItem = this.state.dataMap.get(item.name);
+        if (!globalItem) {
+          console.error('无法找到全局item对象:', item.name);
+          return;
+        }
+
         // 切换收藏状态
-        item.isFavorite = !item.isFavorite;
-        
+        globalItem.isFavorite = !globalItem.isFavorite;
+
         // 保存到数据库
-        await this.state.saveItemQuick(item);
-        
+        await this.state.saveItemQuick(globalItem);
+
         // 更新按钮状态
-        if (item.isFavorite) {
+        if (globalItem.isFavorite) {
           favoriteBtn.classList.add('favorited');
           favoriteBtn.textContent = '❤️';
           favoriteBtn.title = '已收藏';
-          this.showToast('已添加到收藏', '❤️', 'success', item);
+          this.showToast('已添加到收藏', '❤️', 'success', globalItem);
         } else {
           favoriteBtn.classList.remove('favorited');
           favoriteBtn.textContent = '🤍';
           favoriteBtn.title = '添加收藏';
-          this.showToast('已取消收藏', '🤍', 'success', item);
+          this.showToast('已取消收藏', '🤍', 'success', globalItem);
         }
-        
+
         // 同步更新卡片上的收藏按钮状态
-        this.updateFavoriteButton(item);
-        
+        this.updateFavoriteButton(globalItem);
+
         // 更新分类计数
         this.renderCategories();
       }
