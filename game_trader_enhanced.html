@@ -9658,12 +9658,11 @@
                         <div class="character-selector-section">
                           <label for="characterSelect" class="character-label">角色</label>
                           <select id="characterSelect" class="character-select">
-                            <option value="all" selected>全部角色</option>
-                            <option value="character1">角色1</option>
-                            <option value="character2">角色2</option>
-                            <option value="character3">角色3</option>
-                            <option value="character4">角色4</option>
-                            <option value="character5">角色5</option>
+                            <option value="1" ${this.currentUserId === 1 ? 'selected' : ''}>角色1</option>
+                            <option value="2" ${this.currentUserId === 2 ? 'selected' : ''}>角色2</option>
+                            <option value="3" ${this.currentUserId === 3 ? 'selected' : ''}>角色3</option>
+                            <option value="4" ${this.currentUserId === 4 ? 'selected' : ''}>角色4</option>
+                            <option value="5" ${this.currentUserId === 5 ? 'selected' : ''}>角色5</option>
                           </select>
                         </div>
                       </div>
@@ -13013,17 +13012,33 @@
           }
         }
 
+        // 同步更新UIManager和DatabaseManager的currentUserId
         this.currentUserId = selectedUserId;
-        
+        this.state.db.currentUserId = selectedUserId;
+
+        console.log(`✅ 切换用户: ${userName} (ID: ${selectedUserId})`);
+        console.log(`✅ UIManager.currentUserId: ${this.currentUserId}`);
+        console.log(`✅ DatabaseManager.currentUserId: ${this.state.db.currentUserId}`);
+
+        // 重新加载当前用户的数据
+        await this.state.loadData();
+
         // 更新右上角用户按钮
         await this.updateUserButton();
-        
+
         // 更新用户菜单（高亮当前用户）
         await this.updateUserMenu();
-        
+
         // 关闭用户菜单
         this.closeUserMenu();
-        
+
+        // 刷新UI显示
+        this.renderCategories();
+        this.renderList(this.elements.searchInput.value.trim());
+
+        // 显示切换成功提示
+        this.showToast(`已切换到用户: ${userName}`, '👤', 'success');
+
         // 打开个人中心
         this.showPersonalCenter();
       }
@@ -14847,7 +14862,8 @@
         const totalInvestmentEl = modal.querySelector('#totalInvestment');
         const averageCostEl = modal.querySelector('#averageCost');
         const potentialProfitEl = modal.querySelector('#potentialProfit');
-        
+        const characterSelect = modal.querySelector('#characterSelect');
+
         // 初始化库存数据
         if (!item.inventory) {
           item.inventory = {
@@ -14858,13 +14874,81 @@
             chartData: []
           };
         }
-        
+
         // 更新库存显示
         this.updateInventoryDisplay(item, modal);
-        
+
         // 更新操作历史
         this.updateOperationHistory(item, modal);
-        
+
+        // 绑定角色选择器change事件
+        if (characterSelect && !characterSelect._inventoryEventBound) {
+          characterSelect._inventoryEventBound = true;
+          characterSelect.addEventListener('change', async (e) => {
+            const selectedUserId = parseInt(e.target.value);
+            console.log(`🔄 切换库存查看角色: ${selectedUserId}`);
+
+            // 从全局dataMap获取最新item
+            const globalItem = this.state.dataMap.get(item.name);
+            if (!globalItem) {
+              console.error('无法找到全局item对象:', item.name);
+              return;
+            }
+
+            // 从数据库加载该用户对该道具的持仓数据
+            const holdingId = `${selectedUserId}#${globalItem.id}`;
+            const holding = await this.state.db.get('user_holdings', holdingId);
+
+            // 从records表加载该用户对该道具的交易记录
+            const allRecords = await this.state.db.getByIndex('records', 'uId', selectedUserId);
+            const itemRecords = allRecords.filter(r => r.itemId === globalItem.id);
+
+            // 更新item的inventory数据为选中用户的数据
+            if (holding) {
+              globalItem.inventory = {
+                currentStock: holding.currentStock || 0,
+                totalInvestment: holding.totalInvestment || 0,
+                averageCost: holding.averageCost || 0,
+                operationHistory: itemRecords.map(r => ({
+                  type: r.type,
+                  quantity: r.quantity,
+                  price: r.price,
+                  totalCost: r.type === 'buy' ? r.totalAmount : 0,
+                  totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
+                  timestamp: r.timestamp,
+                  stockAfter: r.afterStock
+                }))
+              };
+            } else {
+              // 如果没有持仓，显示空数据
+              globalItem.inventory = {
+                currentStock: 0,
+                totalInvestment: 0,
+                averageCost: 0,
+                operationHistory: itemRecords.map(r => ({
+                  type: r.type,
+                  quantity: r.quantity,
+                  price: r.price,
+                  totalCost: r.type === 'buy' ? r.totalAmount : 0,
+                  totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
+                  timestamp: r.timestamp,
+                  stockAfter: r.afterStock
+                }))
+              };
+            }
+
+            // 更新库存显示
+            this.updateInventoryDisplay(globalItem, modal);
+            this.updateOperationHistory(globalItem, modal);
+            this.updateInventoryChart(globalItem, 7, modal, 'stock');
+            this.updateSmartSuggestions(globalItem, modal);
+
+            // 显示切换提示
+            this.toast.setCurrentItem(globalItem);
+            this.toast.info(`已切换到角色${selectedUserId}的库存视图`, '👤');
+          });
+        }
+
         // 防止重复绑定事件
         if (buyBtn && !buyBtn._inventoryEventBound) {
           buyBtn._inventoryEventBound = true;
@@ -14887,7 +14971,10 @@
             return;
           }
           
-          this.buyStock(item, quantity, modal);
+          // 获取当前选中的角色ID
+          const characterSelect = modal.querySelector('#characterSelect');
+          const selectedUserId = characterSelect ? parseInt(characterSelect.value) : this.currentUserId;
+          this.buyStock(item, quantity, modal, selectedUserId);
           });
         }
         
@@ -14911,7 +14998,10 @@
             return;
           }
           
-          this.sellStock(item, quantity, modal);
+          // 获取当前选中的角色ID
+          const characterSelect = modal.querySelector('#characterSelect');
+          const selectedUserId = characterSelect ? parseInt(characterSelect.value) : this.currentUserId;
+          this.sellStock(item, quantity, modal, selectedUserId);
           });
         }
         
@@ -14958,7 +15048,9 @@
         this.bindAIEvents(item, modal);
       }
       
-      async buyStock(item, quantity, modal) {
+      async buyStock(item, quantity, modal, userId) {
+        // 使用传入的userId，如果没有传入则使用当前用户ID
+        const targetUserId = userId || this.currentUserId;
         const currentPrice = item.price;
         const totalCost = currentPrice * quantity;
         const beforeStock = item.inventory.currentStock;
@@ -14997,7 +15089,7 @@
 
         // 显示成功提示
         this.toast.setCurrentItem(item);
-        this.toast.success(`成功购入 ${quantity} 件！库存 +${quantity}`, '📦');
+        this.toast.success(`角色${targetUserId} 成功购入 ${quantity} 件！库存 +${quantity}`, '📦');
 
         // 清空输入框
         const quantityInput = modal.querySelector('#stockQuantity');
@@ -15008,8 +15100,9 @@
         // 保存数据
         await this.state.saveItemQuick(item);
 
-        // 保存交易记录到 records 表
+        // 保存交易记录到 records 表，使用指定的userId
         await this.state.db.saveRecord({
+          uId: targetUserId,  // 明确指定用户ID
           itemId: item.id,
           itemName: item.name,
           opType: 'buy',
@@ -15021,11 +15114,13 @@
           note: `购入${quantity}件，单价¥${currentPrice}`
         });
 
-        // 更新用户统计
-        await this.state.db.updateUserStats();
+        // 更新该用户的统计数据
+        await this.state.db.updateUserStats(targetUserId);
       }
       
-      async sellStock(item, quantity, modal) {
+      async sellStock(item, quantity, modal, userId) {
+        // 使用传入的userId，如果没有传入则使用当前用户ID
+        const targetUserId = userId || this.currentUserId;
         const currentPrice = item.price;
         const totalRevenue = currentPrice * quantity;
         const beforeStock = item.inventory.currentStock;
@@ -15067,7 +15162,7 @@
         this.updateHistoryDisplay(item, modal);
         // 显示成功提示
         this.toast.setCurrentItem(item);
-        this.toast.success(`卖出 ${quantity} 件！库存 -${quantity}`, '💰');
+        this.toast.success(`角色${targetUserId} 卖出 ${quantity} 件！库存 -${quantity}`, '💰');
 
         // 清空输入框
         const quantityInput = modal.querySelector('#stockQuantity');
@@ -15078,8 +15173,9 @@
         // 保存数据
         await this.state.saveItemQuick(item);
 
-        // 保存交易记录到 records 表
+        // 保存交易记录到 records 表，使用指定的userId
         await this.state.db.saveRecord({
+          uId: targetUserId,  // 明确指定用户ID
           itemId: item.id,
           itemName: item.name,
           opType: 'sell',
@@ -15091,8 +15187,8 @@
           note: `卖出${quantity}件，单价¥${currentPrice}`
         });
 
-        // 更新用户统计
-        await this.state.db.updateUserStats();
+        // 更新该用户的统计数据
+        await this.state.db.updateUserStats(targetUserId);
       }
       
       updateInventoryDisplay(item, modal) {
