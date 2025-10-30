@@ -17052,12 +17052,20 @@
             shareBtn.style.transform = '';
           }, 150);
         }
-        
+
+        // 从全局dataMap获取item对象，确保使用最新数据
+        const globalItem = this.state.dataMap.get(item.name);
+        if (!globalItem) {
+          console.error('无法找到全局item对象:', item.name);
+          this.showToast('分享失败：无法找到道具数据', '❌', 'error', item);
+          return;
+        }
+
         // 生成分享内容
-        const shareContent = this.generateShareContent(item, modal);
-        
+        const shareContent = this.generateShareContent(globalItem, modal);
+
         // 复制到剪贴板
-        this.copyToClipboard(shareContent, item);
+        this.copyToClipboard(shareContent, globalItem);
       }
       
       // 生成分享内容
@@ -17157,7 +17165,7 @@
           // 使用现代 Clipboard API
           if (navigator.clipboard && window.isSecureContext) {
             await navigator.clipboard.writeText(text);
-            this.showToast('分享内容已复制到剪贴板！', '🔞', 'success', item);
+            this.showToast('分享内容已复制到剪贴板！', '📋', 'success', item);
           } else {
             // 降级方案：使用传统方法
             const textArea = document.createElement('textarea');
@@ -17168,10 +17176,10 @@
             document.body.appendChild(textArea);
             textArea.focus();
             textArea.select();
-            
+
             try {
               document.execCommand('copy');
-              this.showToast('分享内容已复制到剪贴板！', '🔞', 'success', item);
+              this.showToast('分享内容已复制到剪贴板！', '📋', 'success', item);
             } catch (err) {
               console.error('复制失败:', err);
               this.showToast('复制失败，请手动复制', '❌', 'error', item);
