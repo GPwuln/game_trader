@@ -16781,7 +16781,14 @@
           const sortedHistory = [...filteredHistory].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           historyList.innerHTML = sortedHistory.map(record => {
             const timeAgo = this.formatTimeAgo(record.timestamp);
-            
+
+            // 检查是否有用户标识（全部角色视图）
+            const userBadge = record.userLabel || record.userId ? `<span class="user-badge" style="display: inline-block; padding: 2px 6px; background: linear-gradient(135deg, var(--accent), #2563eb); color: white; border-radius: 4px; font-size: 11px; font-weight: 600; margin-right: 6px;">${record.userLabel || `角色${record.userId}`}</span>` : '';
+
+            let actionText = '';
+            let actionClass = '';
+            let stockText = '';
+
             if (record.type === 'price_change') {
               // 价格变动记录显示
               const oldPriceText = `¥${Utils.formatPrice(record.oldPrice, this.state.enableFormatPrice)}`;
@@ -16789,48 +16796,44 @@
               const changeText = record.change > 0 ? `+¥${Utils.formatPrice(record.change, this.state.enableFormatPrice)}` : `¥${Utils.formatPrice(record.change, this.state.enableFormatPrice)}`;
               const changePercentText = `${record.changePercent}%`;
               const changeClass = record.change > 0 ? 'price-up' : 'price-down';
-              const changeIcon = record.change > 0 ? '📈 ' : '📉';
-              
-              return `
-                <div class="history-item history-item-type-price_change">
-                  <div class="history-item-icon">${changeIcon}</div>
-                  <div class="history-item-details">
-                    <div class="history-item-main">价格变动: ${oldPriceText} → ${newPriceText}</div>
-                    <div class="history-item-sub">
-                      <span class="price-change ${changeClass}">${changeText} (${changePercentText})</span>
-                    </div>
-                  </div>
-                  <div class="history-time">${timeAgo}</div>
-                </div>
-              `;
-            } else {
-              // 买卖记录显示
-              const actionText = record.type === 'buy' ? `购入 ${record.quantity} 件` : `卖出 ${record.quantity} 件`;
+
+              actionText = `价格变动: ${oldPriceText} → ${newPriceText} <span class="price-change ${changeClass}">(${changeText}, ${changePercentText})</span>`;
+              actionClass = 'history-price';
+              stockText = `库存: ${record.stock || 0}`;
+            } else if (record.type === 'buy') {
+              // 买入记录显示
               const priceText = `¥${Utils.formatPrice(record.price, this.state.enableFormatPrice)}`;
-              const stockText = `库存: ${record.stockAfter}`;
-              const actionIcon = record.type === 'buy' ? '🛒' : '💰';
-              const typeClass = record.type === 'buy' ? 'history-item-type-buy' : 'history-item-type-sell';
-              
-              let revenueInfo = '';
-              if (record.type === 'sell' && record.totalRevenue) {
-                revenueInfo = `<span class="revenue-info">+¥${Utils.formatPrice(record.totalRevenue, this.state.enableFormatPrice)}</span>`;
-              } else if (record.type === 'buy' && record.totalCost) {
-                revenueInfo = `<span class="cost-info">-¥${Utils.formatPrice(record.totalCost, this.state.enableFormatPrice)}</span>`;
+              actionText = `购入 ${record.quantity} 件 @ ${priceText}`;
+              actionClass = 'history-buy';
+              stockText = `库存: ${record.stockAfter}`;
+
+              if (record.totalCost) {
+                actionText += ` <span class="cost-info">(-¥${Utils.formatPrice(record.totalCost, this.state.enableFormatPrice)})</span>`;
               }
-              
-              return `
-                <div class="history-item ${typeClass}">
-                  <div class="history-item-icon">${actionIcon}</div>
-                  <div class="history-item-details">
-                    <div class="history-item-main">${actionText} @ ${priceText}</div>
-                    <div class="history-item-sub">
-                      ${stockText} ${revenueInfo}
-                    </div>
-                  </div>
-                  <div class="history-time">${timeAgo}</div>
-                </div>
-              `;
+            } else if (record.type === 'sell') {
+              // 卖出记录显示
+              const priceText = `¥${Utils.formatPrice(record.price, this.state.enableFormatPrice)}`;
+              actionText = `卖出 ${record.quantity} 件 @ ${priceText}`;
+              actionClass = 'history-sell';
+              stockText = `库存: ${record.stockAfter}`;
+
+              if (record.totalRevenue) {
+                actionText += ` <span class="revenue-info">(+¥${Utils.formatPrice(record.totalRevenue, this.state.enableFormatPrice)})</span>`;
+              }
+            } else {
+              // 其他类型记录
+              actionText = record.description || '未知操作';
+              actionClass = 'history-other';
+              stockText = `库存: ${record.stock || 0}`;
             }
+
+            return `
+              <div class="history-item ${actionClass}">
+                <span class="history-time">${userBadge}${timeAgo}</span>
+                <span class="history-action">${actionText}</span>
+                <span class="history-stock">${stockText}</span>
+              </div>
+            `;
           }).join('');
         }
 
