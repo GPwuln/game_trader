@@ -7718,8 +7718,24 @@
         if (!history?.length) return { avg: 0, max: { price: 0, date: '-' }, min: { price: 0, date: '-' }, count: 0 };
         const prices = history.map(h => h.close);
         const avg = prices.reduce((sum, p) => sum + p, 0) / prices.length;
-        const maxIdx = prices.indexOf(Math.max(...prices));
-        const minIdx = prices.indexOf(Math.min(...prices));
+
+        // 使用循环而不是展开运算符，避免堆栈溢出
+        let maxPrice = prices[0];
+        let minPrice = prices[0];
+        let maxIdx = 0;
+        let minIdx = 0;
+
+        for (let i = 1; i < prices.length; i++) {
+          if (prices[i] > maxPrice) {
+            maxPrice = prices[i];
+            maxIdx = i;
+          }
+          if (prices[i] < minPrice) {
+            minPrice = prices[i];
+            minIdx = i;
+          }
+        }
+
         return { avg: Math.round(avg), max: { price: prices[maxIdx], date: history[maxIdx].date }, min: { price: prices[minIdx], date: history[minIdx].date }, count: history.length };
       },
 
@@ -8776,7 +8792,64 @@
           console.error('加载数据失败:', err);
         }
       }
-      
+
+      // 只重新加载当前用户的持仓和交易记录数据，不重新加载全局道具表和价格历史
+      async loadUserDataOnly() {
+        try {
+          console.log(`📖 切换用户，只加载用户 ${this.db.currentUserId} 的持仓和交易数据...`);
+
+          // 1. 从user_holdings表加载当前用户的持仓
+          const holdings = await this.db.getByIndex(CONFIG.STORE_HOLDINGS, 'uId', this.db.currentUserId);
+          console.log(`✅ 加载了 ${holdings.length} 个持仓记录，用户ID: ${this.db.currentUserId}`);
+
+          // 2. 从records表加载当前用户的交易记录
+          const records = await this.db.getByIndex(CONFIG.STORE_RECORDS, 'uId', this.db.currentUserId);
+          console.log(`✅ 加载了 ${records.length} 条交易记录`);
+
+          // 3. 更新现有 data 中每个道具的用户相关数据（inventory）
+          this.data.forEach(item => {
+            // 查找该道具的持仓信息
+            const holding = holdings.find(h => h.itemId === item.id);
+
+            // 查找该道具的交易记录（用于operationHistory）
+            const itemRecords = records
+              .filter(r => r.itemId === item.id)
+              .sort((a, b) => a.timestamp - b.timestamp)
+              .map(r => ({
+                type: r.type,
+                quantity: r.quantity || 0,
+                price: r.price || 0,
+                timestamp: r.timestamp,
+                note: r.note || '',
+                stockAfter: r.afterStock || 0,
+                totalRevenue: r.type === 'sell' ? r.totalAmount || 0 : undefined,
+                totalCost: r.type === 'buy' ? r.totalAmount || 0 : undefined,
+                oldPrice: r.metadata?.oldPrice,
+                newPrice: r.metadata?.newPrice,
+                change: r.metadata?.change,
+                changePercent: r.metadata?.changePercent
+              }));
+
+            // 更新 inventory 数据
+            item.inventory = holding ? {
+              currentStock: holding.currentStock,
+              totalInvestment: holding.totalInvestment,
+              averageCost: holding.averageCost,
+              operationHistory: itemRecords
+            } : {
+              currentStock: 0,
+              totalInvestment: 0,
+              averageCost: 0,
+              operationHistory: itemRecords
+            };
+          });
+
+          console.log(`✅ 用户数据更新完成，共 ${this.data.length} 个道具`);
+        } catch (err) {
+          console.error('加载用户数据失败:', err);
+        }
+      }
+
       // 初始化用户数据
       async initUserData() {
         // 检查默认用户是否存在
@@ -13052,8 +13125,8 @@
         console.log(`✅ UIManager.currentUserId: ${this.currentUserId}`);
         console.log(`✅ DatabaseManager.currentUserId: ${this.state.db.currentUserId}`);
 
-        // 重新加载当前用户的数据
-        await this.state.loadData();
+        // 只重新加载当前用户的持仓和交易数据，不重新加载全局道具表和价格历史
+        await this.state.loadUserDataOnly();
 
         // 更新右上角用户按钮
         await this.updateUserButton();
