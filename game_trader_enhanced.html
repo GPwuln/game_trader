@@ -5611,7 +5611,31 @@
     background: rgba(79, 70, 229, 0.1);
     transform: scale(1.05);
   }
-  
+
+  /* 角色徽章样式 */
+  .user-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(135deg, var(--accent), #2563eb);
+    border-radius: 12px;
+    margin-left: 8px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);
+    transition: all 0.3s ease;
+  }
+
+  .history-list .history-item:hover .user-badge {
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(79, 70, 229, 0.3);
+  }
+
   /* 历史记录类型样式 */
   .history-item-type-buy {
     border-left: 3px solid #10b981;
@@ -16906,7 +16930,10 @@
               const changePercentText = `${record.changePercent}%`;
               const changeClass = record.change > 0 ? 'price-up' : 'price-down';
               const changeIcon = record.change > 0 ? '📈 ' : '📉';
-              
+
+              // 角色徽章（仅在全部角色视图时显示）
+              const userBadge = record.userId ? `<span class="user-badge">角色${record.userId}</span>` : '';
+
               return `
                 <div class="history-item history-item-type-price_change">
                   <div class="history-item-icon">${changeIcon}</div>
@@ -16916,7 +16943,7 @@
                       <span class="price-change ${changeClass}">${changeText} (${changePercentText})</span>
                     </div>
                   </div>
-                  <div class="history-time">${timeAgo}</div>
+                  <div class="history-time">${timeAgo}${userBadge}</div>
                 </div>
               `;
             } else {
@@ -16926,14 +16953,17 @@
               const stockText = `库存: ${record.stockAfter}`;
               const actionIcon = record.type === 'buy' ? '🛒' : '💰';
               const typeClass = record.type === 'buy' ? 'history-item-type-buy' : 'history-item-type-sell';
-              
+
               let revenueInfo = '';
               if (record.type === 'sell' && record.totalRevenue) {
                 revenueInfo = `<span class="revenue-info">+¥${Utils.formatPrice(record.totalRevenue, this.state.enableFormatPrice)}</span>`;
               } else if (record.type === 'buy' && record.totalCost) {
                 revenueInfo = `<span class="cost-info">-¥${Utils.formatPrice(record.totalCost, this.state.enableFormatPrice)}</span>`;
               }
-              
+
+              // 角色徽章（仅在全部角色视图时显示）
+              const userBadge = record.userId ? `<span class="user-badge">角色${record.userId}</span>` : '';
+
               return `
                 <div class="history-item ${typeClass}">
                   <div class="history-item-icon">${actionIcon}</div>
@@ -16943,7 +16973,7 @@
                       ${stockText} ${revenueInfo}
                     </div>
                   </div>
-                  <div class="history-time">${timeAgo}</div>
+                  <div class="history-time">${timeAgo}${userBadge}</div>
                 </div>
               `;
             }
