@@ -15450,6 +15450,29 @@
         // 更新历史记录模块的统计信息
         this.updateHistoryDisplay(item, modal);
 
+        // 手动更新库存统计信息区域（因为左侧库存显示被替换，updateInventoryDisplay无法正常工作）
+        const totalInvestmentEl = modal.querySelector('#totalInvestment');
+        const averageCostEl = modal.querySelector('#averageCost');
+        const costRecoveryRateEl = modal.querySelector('#costRecoveryRate');
+        const potentialProfitEl = modal.querySelector('#potentialProfit');
+
+        if (totalInvestmentEl && averageCostEl && costRecoveryRateEl && potentialProfitEl) {
+          // 更新总投入和平均成本
+          totalInvestmentEl.textContent = `¥${Utils.formatPrice(totalInvestment, this.state.enableFormatPrice)}`;
+          averageCostEl.textContent = `¥${Utils.formatPrice(totalAverageCost, this.state.enableFormatPrice)}`;
+
+          // 计算成本回收率（使用汇总数据）
+          const costRecoveryRate = this.calculateCostRecoveryRate(item);
+          costRecoveryRateEl.textContent = `${costRecoveryRate.toFixed(1)}%`;
+          costRecoveryRateEl.style.color = costRecoveryRate >= 100 ? '#10b981' : costRecoveryRate >= 50 ? '#f59e0b' : '#ef4444';
+
+          // 计算潜在收益（使用汇总数据）
+          const currentValue = totalStock * (item.price || 0);
+          const potentialProfit = currentValue - totalInvestment;
+          potentialProfitEl.textContent = `¥${Utils.formatPrice(potentialProfit, this.state.enableFormatPrice)}`;
+          potentialProfitEl.style.color = potentialProfit >= 0 ? '#10b981' : '#ef4444';
+        }
+
         console.log('✅ 全部角色库存数据加载完成');
       }
 
