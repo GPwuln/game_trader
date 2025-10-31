@@ -13037,11 +13037,56 @@
         this.renderCategories();
         this.renderList(this.elements.searchInput.value.trim());
 
+        // 检查是否有打开的道具详情模态框
+        const openModal = document.querySelector('.item-detail-modal');
+        let currentItemName = null;
+        let activeTab = 'trend'; // 默认标签页
+
+        if (openModal) {
+          // 获取当前打开的道具名称
+          const titleElement = openModal.querySelector('.item-detail-title');
+          if (titleElement) {
+            currentItemName = titleElement.textContent;
+          }
+
+          // 获取当前激活的标签页
+          const activeTabElement = openModal.querySelector('.item-detail-tab.active');
+          if (activeTabElement) {
+            activeTab = activeTabElement.getAttribute('data-tab') || 'trend';
+          }
+
+          // 关闭当前模态框
+          openModal.remove();
+        }
+
         // 显示切换成功提示
         this.showToast(`已切换到用户: ${userName}`, '👤', 'success');
 
-        // 打开个人中心
-        this.showPersonalCenter();
+        // 如果之前有打开的道具详情，重新打开它
+        if (currentItemName) {
+          // 从重新加载的数据中找到对应的道具
+          const item = this.state.dataMap.get(currentItemName);
+          if (item) {
+            console.log(`🔄 重新打开道具详情: ${currentItemName}, 激活标签: ${activeTab}`);
+
+            // 重新打开模态框
+            this.openItemDetailModal(item);
+
+            // 等待模态框渲染完成后切换到之前的标签页
+            setTimeout(() => {
+              const newModal = document.querySelector('.item-detail-modal');
+              if (newModal && activeTab !== 'trend') {
+                const targetTab = newModal.querySelector(`.item-detail-tab[data-tab="${activeTab}"]`);
+                if (targetTab) {
+                  targetTab.click();
+                }
+              }
+            }, 100);
+          }
+        } else {
+          // 如果没有打开的道具详情，打开个人中心
+          this.showPersonalCenter();
+        }
       }
       
       async loadUserData(userId = 1) {
@@ -14984,6 +15029,9 @@
               this.updateInventoryChart(globalItem, 7, modal, 'stock');
               this.updateSmartSuggestions(globalItem, modal);
 
+              // 更新历史记录模块的统计信息
+              this.updateHistoryDisplay(globalItem, modal);
+
               // 显示切换提示
               this.toast.setCurrentItem(globalItem);
               this.toast.info(`已切换到角色${selectedUserId}的库存视图`, '👤');
@@ -15398,6 +15446,9 @@
         this.updateOperationHistory(item, modal);
         this.updateInventoryChart(item, 7, modal, 'stock');
         this.updateSmartSuggestions(item, modal);
+
+        // 更新历史记录模块的统计信息
+        this.updateHistoryDisplay(item, modal);
 
         console.log('✅ 全部角色库存数据加载完成');
       }
