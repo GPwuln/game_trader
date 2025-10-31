@@ -5611,7 +5611,31 @@
     background: rgba(79, 70, 229, 0.1);
     transform: scale(1.05);
   }
-  
+
+  /* 角色徽章样式 */
+  .user-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 24px;
+    height: 24px;
+    padding: 0 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: white;
+    background: linear-gradient(135deg, var(--accent), #2563eb);
+    border-radius: 12px;
+    margin-left: 8px;
+    flex-shrink: 0;
+    box-shadow: 0 2px 4px rgba(79, 70, 229, 0.2);
+    transition: all 0.3s ease;
+  }
+
+  .history-list .history-item:hover .user-badge {
+    transform: scale(1.1);
+    box-shadow: 0 3px 6px rgba(79, 70, 229, 0.3);
+  }
+
   /* 历史记录类型样式 */
   .history-item-type-buy {
     border-left: 3px solid #10b981;
@@ -10487,8 +10511,17 @@
         // 保存到数据库
         await this.state.saveItemQuick(globalItem);
 
-        // 更新UI
-        this.updateFavoriteButton(globalItem);
+        // 更新分类计数（在UI更新之前）
+        this.renderCategories();
+
+        // 如果当前在"收藏"分类，需要重新渲染列表
+        if (this.state.activeCategory === '收藏') {
+          // 重新渲染列表，以反映收藏状态的变化
+          this.renderList(this.elements.searchInput.value.trim());
+        } else {
+          // 否则只更新卡片的收藏按钮
+          this.updateFavoriteButton(globalItem);
+        }
 
         // 直接更新模态框中的收藏按钮（如果模态框打开）
         const modal = document.querySelector('.item-detail-modal');
@@ -10506,8 +10539,6 @@
             }
           }
         }
-
-        this.renderCategories(); // 更新分类计数
 
         // 显示提示
         const message = globalItem.isFavorite ? '已添加到收藏' : '已取消收藏';
@@ -13037,11 +13068,56 @@
         this.renderCategories();
         this.renderList(this.elements.searchInput.value.trim());
 
+        // 检查是否有打开的道具详情模态框
+        const openModal = document.querySelector('.item-detail-modal');
+        let currentItemName = null;
+        let activeTab = 'trend'; // 默认标签页
+
+        if (openModal) {
+          // 获取当前打开的道具名称
+          const titleElement = openModal.querySelector('.item-detail-title');
+          if (titleElement) {
+            currentItemName = titleElement.textContent;
+          }
+
+          // 获取当前激活的标签页
+          const activeTabElement = openModal.querySelector('.item-detail-tab.active');
+          if (activeTabElement) {
+            activeTab = activeTabElement.getAttribute('data-tab') || 'trend';
+          }
+
+          // 关闭当前模态框
+          openModal.remove();
+        }
+
         // 显示切换成功提示
         this.showToast(`已切换到用户: ${userName}`, '👤', 'success');
 
-        // 打开个人中心
-        this.showPersonalCenter();
+        // 如果之前有打开的道具详情，重新打开它
+        if (currentItemName) {
+          // 从重新加载的数据中找到对应的道具
+          const item = this.state.dataMap.get(currentItemName);
+          if (item) {
+            console.log(`🔄 重新打开道具详情: ${currentItemName}, 激活标签: ${activeTab}`);
+
+            // 重新打开模态框
+            this.openItemDetailModal(item);
+
+            // 等待模态框渲染完成后切换到之前的标签页
+            setTimeout(() => {
+              const newModal = document.querySelector('.item-detail-modal');
+              if (newModal && activeTab !== 'trend') {
+                const targetTab = newModal.querySelector(`.item-detail-tab[data-tab="${activeTab}"]`);
+                if (targetTab) {
+                  targetTab.click();
+                }
+              }
+            }, 100);
+          }
+        } else {
+          // 如果没有打开的道具详情，打开个人中心
+          this.showPersonalCenter();
+        }
       }
       
       async loadUserData(userId = 1) {
@@ -14984,6 +15060,9 @@
               this.updateInventoryChart(globalItem, 7, modal, 'stock');
               this.updateSmartSuggestions(globalItem, modal);
 
+              // 更新历史记录模块的统计信息
+              this.updateHistoryDisplay(globalItem, modal);
+
               // 显示切换提示
               this.toast.setCurrentItem(globalItem);
               this.toast.info(`已切换到角色${selectedUserId}的库存视图`, '👤');
@@ -15304,66 +15383,85 @@
         // 按时间倒序排序历史记录
         allOperationHistory.sort((a, b) => b.timestamp - a.timestamp);
 
-        // 生成所有角色的库存详情HTML
+        // 1. 更新左侧库存显示区域：只显示总计汇总
         const inventoryLeft = modal.querySelector('.inventory-left');
         if (inventoryLeft) {
           inventoryLeft.innerHTML = `
-            <div class="all-users-inventory-view">
-              <div class="inventory-title">
-                <span class="inventory-icon">📊</span>
-                <h3>全部角色库存</h3>
+            <div class="inventory-title">
+              <span class="inventory-icon">📊</span>
+              <h3>全部角色库存</h3>
+            </div>
+            <div class="current-stock-display" style="display: flex; flex-direction: column; gap: 16px; width: 100%;">
+              <div style="text-align: center;">
+                <div class="stock-number" style="font-size: 56px; font-weight: 700; color: var(--accent); margin-bottom: 8px;">${totalStock}</div>
+                <div class="stock-label">总库存（件）</div>
               </div>
-
-              <!-- 各角色库存卡片列表 -->
-              <div class="user-inventory-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin: 16px 0;">
-                ${allUsersData.map(userData => `
-                  <div class="user-inventory-card" style="background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 12px; ${userData.currentStock > 0 ? 'border-left: 3px solid var(--accent);' : ''}">
-                    <div class="user-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: 10px;">
-                      <span class="user-avatar" style="width: 28px; height: 28px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #2563eb); display: flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 700; color: white;">${userData.userId}</span>
-                      <span class="user-name" style="font-size: 14px; font-weight: 600;">角色${userData.userId}</span>
-                    </div>
-                    <div class="user-stats" style="display: flex; flex-direction: column; gap: 6px; font-size: 12px;">
-                      <div class="stat-row" style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--fg); opacity: 0.7;">库存</span>
-                        <span style="font-weight: 600; color: ${userData.currentStock > 0 ? 'var(--accent)' : 'var(--fg)'};">${userData.currentStock} 件</span>
-                      </div>
-                      <div class="stat-row" style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--fg); opacity: 0.7;">投资</span>
-                        <span style="font-weight: 600;">¥${Utils.formatPrice(userData.totalInvestment, this.state.enableFormatPrice)}</span>
-                      </div>
-                      <div class="stat-row" style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--fg); opacity: 0.7;">成本</span>
-                        <span style="font-weight: 600;">¥${Utils.formatPrice(userData.averageCost, this.state.enableFormatPrice)}</span>
-                      </div>
-                      <div class="stat-row" style="display: flex; justify-content: space-between;">
-                        <span style="color: var(--fg); opacity: 0.7;">交易</span>
-                        <span style="font-weight: 600;">${userData.recordCount} 笔</span>
-                      </div>
-                    </div>
-                  </div>
-                `).join('')}
-              </div>
-
-              <!-- 总计汇总 -->
-              <div class="total-summary" style="background: linear-gradient(135deg, rgba(79, 70, 229, 0.1), rgba(37, 99, 235, 0.1)); border: 1px solid var(--accent); border-radius: 8px; padding: 16px; margin-top: 16px;">
-                <h4 style="margin: 0 0 12px 0; font-size: 15px; color: var(--accent);">📊 总计汇总</h4>
-                <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px;">
-                  <div style="text-align: center;">
-                    <div style="font-size: 20px; font-weight: 700; color: var(--accent);">${totalStock}</div>
-                    <div style="font-size: 12px; color: var(--fg); opacity: 0.7; margin-top: 4px;">总库存（件）</div>
-                  </div>
-                  <div style="text-align: center;">
-                    <div style="font-size: 20px; font-weight: 700; color: var(--accent);">¥${Utils.formatPrice(totalInvestment, this.state.enableFormatPrice)}</div>
-                    <div style="font-size: 12px; color: var(--fg); opacity: 0.7; margin-top: 4px;">总投资</div>
-                  </div>
-                  <div style="text-align: center;">
-                    <div style="font-size: 20px; font-weight: 700; color: var(--accent);">¥${Utils.formatPrice(totalAverageCost, this.state.enableFormatPrice)}</div>
-                    <div style="font-size: 12px; color: var(--fg); opacity: 0.7; margin-top: 4px;">平均成本</div>
-                  </div>
+              <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; width: 100%; padding: 0 20px;">
+                <div style="text-align: center; padding: 12px; background: rgba(79, 70, 229, 0.05); border-radius: 8px;">
+                  <div style="font-size: 18px; font-weight: 700; color: var(--accent);">¥${Utils.formatPrice(totalInvestment, this.state.enableFormatPrice)}</div>
+                  <div style="font-size: 12px; color: var(--fg); opacity: 0.7; margin-top: 4px;">总投资</div>
+                </div>
+                <div style="text-align: center; padding: 12px; background: rgba(79, 70, 229, 0.05); border-radius: 8px;">
+                  <div style="font-size: 18px; font-weight: 700; color: var(--accent);">¥${Utils.formatPrice(totalAverageCost, this.state.enableFormatPrice)}</div>
+                  <div style="font-size: 12px; color: var(--fg); opacity: 0.7; margin-top: 4px;">平均成本</div>
                 </div>
               </div>
             </div>
           `;
+        }
+
+        // 2. 在库存管理主区域下方添加角色库存卡片
+        const inventoryMain = modal.querySelector('.inventory-main');
+        const inventoryContainer = modal.querySelector('.inventory-container');
+
+        // 移除旧的角色卡片容器（如果存在）
+        const oldUserCardsContainer = modal.querySelector('.user-inventory-cards-container');
+        if (oldUserCardsContainer) {
+          oldUserCardsContainer.remove();
+        }
+
+        // 创建新的角色卡片容器
+        if (inventoryMain && inventoryContainer) {
+          const userCardsContainer = document.createElement('div');
+          userCardsContainer.className = 'user-inventory-cards-container';
+          userCardsContainer.style.cssText = 'margin-top: 20px; padding: 20px; background: var(--card); border-radius: 12px; border: 1px solid var(--border);';
+          userCardsContainer.innerHTML = `
+            <h4 style="margin: 0 0 16px 0; font-size: 16px; color: var(--fg); display: flex; align-items: center; gap: 8px;">
+              <span>👥</span>
+              <span>各角色详情</span>
+            </h4>
+            <div class="user-inventory-list" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px;">
+              ${allUsersData.map(userData => `
+                <div class="user-inventory-card" style="background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 16px; ${userData.currentStock > 0 ? 'border-left: 3px solid var(--accent);' : ''}">
+                  <div class="user-header" style="display: flex; align-items: center; gap: 8px; margin-bottom: 12px;">
+                    <span class="user-avatar" style="width: 32px; height: 32px; border-radius: 50%; background: linear-gradient(135deg, var(--accent), #2563eb); display: flex; align-items: center; justify-content: center; font-size: 14px; font-weight: 700; color: white;">${userData.userId}</span>
+                    <span class="user-name" style="font-size: 15px; font-weight: 600;">角色${userData.userId}</span>
+                  </div>
+                  <div class="user-stats" style="display: flex; flex-direction: column; gap: 8px; font-size: 13px;">
+                    <div class="stat-row" style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+                      <span style="color: var(--fg); opacity: 0.7;">库存</span>
+                      <span style="font-weight: 600; color: ${userData.currentStock > 0 ? 'var(--accent)' : 'var(--fg)'};">${userData.currentStock} 件</span>
+                    </div>
+                    <div class="stat-row" style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+                      <span style="color: var(--fg); opacity: 0.7;">投资</span>
+                      <span style="font-weight: 600;">¥${Utils.formatPrice(userData.totalInvestment, this.state.enableFormatPrice)}</span>
+                    </div>
+                    <div class="stat-row" style="display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border);">
+                      <span style="color: var(--fg); opacity: 0.7;">成本</span>
+                      <span style="font-weight: 600;">¥${Utils.formatPrice(userData.averageCost, this.state.enableFormatPrice)}</span>
+                    </div>
+                    <div class="stat-row" style="display: flex; justify-content: space-between; padding: 6px 0;">
+                      <span style="color: var(--fg); opacity: 0.7;">交易</span>
+                      <span style="font-weight: 600;">${userData.recordCount} 笔</span>
+                    </div>
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `;
+
+          // 将角色卡片容器插入到库存管理主区域之后
+          inventoryMain.parentNode.insertBefore(userCardsContainer, inventoryMain.nextSibling);
         }
 
         // 更新item的inventory为汇总数据
@@ -15380,22 +15478,71 @@
         this.updateInventoryChart(item, 7, modal, 'stock');
         this.updateSmartSuggestions(item, modal);
 
+        // 更新历史记录模块的统计信息
+        this.updateHistoryDisplay(item, modal);
+
+        // 手动更新库存统计信息区域（因为左侧库存显示被替换，updateInventoryDisplay无法正常工作）
+        const totalInvestmentEl = modal.querySelector('#totalInvestment');
+        const averageCostEl = modal.querySelector('#averageCost');
+        const costRecoveryRateEl = modal.querySelector('#costRecoveryRate');
+        const potentialProfitEl = modal.querySelector('#potentialProfit');
+
+        if (totalInvestmentEl && averageCostEl && costRecoveryRateEl && potentialProfitEl) {
+          // 更新总投入和平均成本
+          totalInvestmentEl.textContent = `¥${Utils.formatPrice(totalInvestment, this.state.enableFormatPrice)}`;
+          averageCostEl.textContent = `¥${Utils.formatPrice(totalAverageCost, this.state.enableFormatPrice)}`;
+
+          // 计算成本回收率（使用汇总数据）
+          const costRecoveryRate = this.calculateCostRecoveryRate(item);
+          costRecoveryRateEl.textContent = `${costRecoveryRate.toFixed(1)}%`;
+          costRecoveryRateEl.style.color = costRecoveryRate >= 100 ? '#10b981' : costRecoveryRate >= 50 ? '#f59e0b' : '#ef4444';
+
+          // 计算潜在收益（使用汇总数据）
+          const currentValue = totalStock * (item.price || 0);
+          const potentialProfit = currentValue - totalInvestment;
+          potentialProfitEl.textContent = `¥${Utils.formatPrice(potentialProfit, this.state.enableFormatPrice)}`;
+          potentialProfitEl.style.color = potentialProfit >= 0 ? '#10b981' : '#ef4444';
+        }
+
         console.log('✅ 全部角色库存数据加载完成');
       }
 
       updateInventoryDisplay(item, modal) {
+        // 如果从"全部角色"视图切换到具体角色，需要恢复正常的库存显示结构
+        const inventoryLeft = modal.querySelector('.inventory-left');
+        const userCardsContainer = modal.querySelector('.user-inventory-cards-container');
+
+        // 移除角色卡片容器（如果存在）
+        if (userCardsContainer) {
+          userCardsContainer.remove();
+        }
+
+        // 检查并恢复左侧库存显示的原始结构
+        if (inventoryLeft && !modal.querySelector('#currentStock')) {
+          inventoryLeft.innerHTML = `
+            <div class="inventory-title">
+              <span class="inventory-icon"></span>
+              <h3></h3>
+            </div>
+            <div class="current-stock-display">
+              <div class="stock-number" id="currentStock">0</div>
+              <div class="stock-label">当前库存</div>
+            </div>
+          `;
+        }
+
         const currentStockEl = modal.querySelector('#currentStock');
         const totalInvestmentEl = modal.querySelector('#totalInvestment');
         const averageCostEl = modal.querySelector('#averageCost');
         const costRecoveryRateEl = modal.querySelector('#costRecoveryRate');
         const potentialProfitEl = modal.querySelector('#potentialProfit');
-        
+
         // 检查DOM元素是否存在
         if (!currentStockEl || !totalInvestmentEl || !averageCostEl || !costRecoveryRateEl || !potentialProfitEl) {
           console.warn('库存显示元素未找到，跳过更新');
           return;
         }
-        
+
         // 确保inventory对象存在
         if (!item.inventory) {
           console.warn('道具inventory对象不存在，跳过更新');
@@ -16790,7 +16937,10 @@
               const changePercentText = `${record.changePercent}%`;
               const changeClass = record.change > 0 ? 'price-up' : 'price-down';
               const changeIcon = record.change > 0 ? '📈 ' : '📉';
-              
+
+              // 角色徽章（仅在全部角色视图时显示）
+              const userBadge = record.userId ? `<span class="user-badge">角色${record.userId}</span>` : '';
+
               return `
                 <div class="history-item history-item-type-price_change">
                   <div class="history-item-icon">${changeIcon}</div>
@@ -16800,7 +16950,7 @@
                       <span class="price-change ${changeClass}">${changeText} (${changePercentText})</span>
                     </div>
                   </div>
-                  <div class="history-time">${timeAgo}</div>
+                  <div class="history-time">${timeAgo}${userBadge}</div>
                 </div>
               `;
             } else {
@@ -16810,14 +16960,17 @@
               const stockText = `库存: ${record.stockAfter}`;
               const actionIcon = record.type === 'buy' ? '🛒' : '💰';
               const typeClass = record.type === 'buy' ? 'history-item-type-buy' : 'history-item-type-sell';
-              
+
               let revenueInfo = '';
               if (record.type === 'sell' && record.totalRevenue) {
                 revenueInfo = `<span class="revenue-info">+¥${Utils.formatPrice(record.totalRevenue, this.state.enableFormatPrice)}</span>`;
               } else if (record.type === 'buy' && record.totalCost) {
                 revenueInfo = `<span class="cost-info">-¥${Utils.formatPrice(record.totalCost, this.state.enableFormatPrice)}</span>`;
               }
-              
+
+              // 角色徽章（仅在全部角色视图时显示）
+              const userBadge = record.userId ? `<span class="user-badge">角色${record.userId}</span>` : '';
+
               return `
                 <div class="history-item ${typeClass}">
                   <div class="history-item-icon">${actionIcon}</div>
@@ -16827,7 +16980,7 @@
                       ${stockText} ${revenueInfo}
                     </div>
                   </div>
-                  <div class="history-time">${timeAgo}</div>
+                  <div class="history-time">${timeAgo}${userBadge}</div>
                 </div>
               `;
             }
