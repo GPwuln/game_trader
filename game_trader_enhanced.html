@@ -10511,8 +10511,17 @@
         // 保存到数据库
         await this.state.saveItemQuick(globalItem);
 
-        // 更新UI
-        this.updateFavoriteButton(globalItem);
+        // 更新分类计数（在UI更新之前）
+        this.renderCategories();
+
+        // 如果当前在"收藏"分类，需要重新渲染列表
+        if (this.state.activeCategory === '收藏') {
+          // 重新渲染列表，以反映收藏状态的变化
+          this.renderList(this.elements.searchInput.value.trim());
+        } else {
+          // 否则只更新卡片的收藏按钮
+          this.updateFavoriteButton(globalItem);
+        }
 
         // 直接更新模态框中的收藏按钮（如果模态框打开）
         const modal = document.querySelector('.item-detail-modal');
@@ -10530,8 +10539,6 @@
             }
           }
         }
-
-        this.renderCategories(); // 更新分类计数
 
         // 显示提示
         const message = globalItem.isFavorite ? '已添加到收藏' : '已取消收藏';
