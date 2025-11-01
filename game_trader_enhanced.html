@@ -15156,7 +15156,7 @@
             this.toast.warning('请输入有效数量', '⚠️');
             return;
           }
-          
+
           // 检查数量是否超过限制
           if (quantity > 100000000) {
             this.showInventoryError(quantityInput, '数量过大');
@@ -15164,7 +15164,7 @@
             this.toast.warning('购入数量不能超过1亿件', '⚠️');
             return;
           }
-          
+
           // 获取当前选中的角色ID
           const characterSelect = modal.querySelector('#characterSelect');
           const selectedValue = characterSelect ? characterSelect.value : this.currentUserId.toString();
@@ -15177,14 +15177,22 @@
             return;
           }
 
+          // 从全局dataMap获取最新的item引用，确保数据一致性
+          const globalItem = this.state.dataMap.get(item.name);
+          if (!globalItem) {
+            console.error('无法找到全局item对象:', item.name);
+            this.toast.error('操作失败：找不到道具数据', '❌');
+            return;
+          }
+
           const selectedUserId = parseInt(selectedValue);
-          this.buyStock(item, quantity, modal, selectedUserId);
+          this.buyStock(globalItem, quantity, modal, selectedUserId);
           });
         }
         
         if (sellBtn && !sellBtn._inventoryEventBound) {
           sellBtn._inventoryEventBound = true;
-          
+
           // 绑定卖出按钮事件
           sellBtn.addEventListener('click', () => {
           const quantity = parseInt(quantityInput.value);
@@ -15194,14 +15202,22 @@
             this.toast.warning('请输入有效数量', '⚠️');
             return;
           }
-          
-          if (quantity > item.inventory.currentStock) {
+
+          // 从全局dataMap获取最新的item引用，确保数据一致性
+          const globalItem = this.state.dataMap.get(item.name);
+          if (!globalItem) {
+            console.error('无法找到全局item对象:', item.name);
+            this.toast.error('操作失败：找不到道具数据', '❌');
+            return;
+          }
+
+          if (quantity > globalItem.inventory.currentStock) {
             this.showInventoryError(quantityInput, '库存不足');
-            this.toast.setCurrentItem(item);
+            this.toast.setCurrentItem(globalItem);
             this.toast.error('库存不足，无法卖出！', '🚫');
             return;
           }
-          
+
           // 获取当前选中的角色ID
           const characterSelect = modal.querySelector('#characterSelect');
           const selectedValue = characterSelect ? characterSelect.value : this.currentUserId.toString();
@@ -15209,13 +15225,13 @@
           // 检查是否选择了"全部角色"
           if (selectedValue === 'all') {
             this.showInventoryError(quantityInput, '请先选择具体角色');
-            this.toast.setCurrentItem(item);
+            this.toast.setCurrentItem(globalItem);
             this.toast.warning('请先选择具体角色后再操作', '⚠️');
             return;
           }
 
           const selectedUserId = parseInt(selectedValue);
-          this.sellStock(item, quantity, modal, selectedUserId);
+          this.sellStock(globalItem, quantity, modal, selectedUserId);
           });
         }
         
@@ -15225,22 +15241,29 @@
           btn.addEventListener('click', () => {
             chartBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            
+
+            // 从全局dataMap获取最新的item引用
+            const globalItem = this.state.dataMap.get(item.name);
+            if (!globalItem) {
+              console.error('无法找到全局item对象:', item.name);
+              return;
+            }
+
             // 获取当前选中的图表类型
             const activeChartTab = modal.querySelector('.chart-tab-btn.active');
             const chartType = activeChartTab ? activeChartTab.dataset.chart : 'stock';
-            
+
             const period = btn.dataset.period === 'all' ? 'all' : parseInt(btn.dataset.period);
-            
+
             // 显示对应的toast通知
-            this.toast.setCurrentItem(item);
+            this.toast.setCurrentItem(globalItem);
             const periodText = period === 'all' ? '全部数据' : `${period}天`;
             this.toast.info(`切换到${periodText}视图`, '📊');
-            
-            this.updateInventoryChart(item, period, modal, chartType);
+
+            this.updateInventoryChart(globalItem, period, modal, chartType);
           });
         });
-        
+
         // 绑定图表标签按钮
         const chartTabBtns = modal.querySelectorAll('.chart-tab-btn');
         chartTabBtns.forEach(btn => {
@@ -15248,7 +15271,15 @@
             chartTabBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             const chartType = btn.dataset.chart;
-            this.switchChartType(item, chartType, modal);
+
+            // 从全局dataMap获取最新的item引用
+            const globalItem = this.state.dataMap.get(item.name);
+            if (!globalItem) {
+              console.error('无法找到全局item对象:', item.name);
+              return;
+            }
+
+            this.switchChartType(globalItem, chartType, modal);
           });
         });
         
