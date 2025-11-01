@@ -8692,7 +8692,7 @@
               .filter(r => r.itemId === item.id)
               .sort((a, b) => a.timestamp - b.timestamp)
               .map(r => ({
-                type: r.type, // 'buy', 'sell', 'price_change'
+                type: r.type, // 'buy', 'sell', 'price_change', 'price_update'
                 quantity: r.quantity || 0,
                 price: r.price || 0,
                 timestamp: r.timestamp,
@@ -8701,8 +8701,9 @@
                 totalRevenue: r.type === 'sell' ? (r.totalAmount || 0) : undefined,
                 totalCost: r.type === 'buy' ? (r.totalAmount || 0) : undefined,
                 // 价格变动相关字段（只存储 oldPrice 和 newPrice，change 和 changePercent 由前端计算）
-                oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
-                newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+                // 支持 price_change 和 price_update 两种类型
+                oldPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+                newPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.newPrice || r.price || 0) : undefined,
                 userId: r.uId  // 添加用户ID字段
               }));
 
@@ -8839,8 +8840,9 @@
                 totalRevenue: r.type === 'sell' ? (r.totalAmount || 0) : undefined,
                 totalCost: r.type === 'buy' ? (r.totalAmount || 0) : undefined,
                 // 只存储 oldPrice 和 newPrice，change 和 changePercent 由前端计算
-                oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
-                newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+                // 支持 price_change 和 price_update 两种类型
+                oldPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+                newPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.newPrice || r.price || 0) : undefined,
                 userId: r.uId  // 添加用户ID字段
               }));
 
@@ -15185,9 +15187,9 @@
                     timestamp: r.timestamp,
                     stockAfter: r.afterStock,
                     note: r.note || '',
-                    // 只存储 oldPrice 和 newPrice
-                    oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
-                    newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+                    // 只存储 oldPrice 和 newPrice，支持 price_change 和 price_update 两种类型
+                    oldPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+                    newPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.newPrice || r.price || 0) : undefined,
                     userId: r.uId
                   }))
                 };
@@ -15206,9 +15208,9 @@
                     timestamp: r.timestamp,
                     stockAfter: r.afterStock,
                     note: r.note || '',
-                    // 只存储 oldPrice 和 newPrice
-                    oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
-                    newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+                    // 只存储 oldPrice 和 newPrice，支持 price_change 和 price_update 两种类型
+                    oldPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+                    newPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.newPrice || r.price || 0) : undefined,
                     userId: r.uId
                   }))
                 };
@@ -15563,9 +15565,9 @@
               timestamp: r.timestamp,
               stockAfter: r.afterStock,
               note: r.note || '',
-              // 只存储 oldPrice 和 newPrice
-              oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
-              newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+              // 只存储 oldPrice 和 newPrice，支持 price_change 和 price_update 两种类型
+              oldPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+              newPrice: (r.type === 'price_change' || r.type === 'price_update') ? (r.metadata?.newPrice || r.price || 0) : undefined,
               userId: userId,
               userLabel: `角色${userId}`
             });
@@ -16671,7 +16673,7 @@
           
           console.log('📋 操作历史记录:', {
             totalRecords: history.length,
-            priceChangeRecords: history.filter(h => h.type === 'price_change').length,
+            priceChangeRecords: history.filter(h => h.type === 'price_change' || h.type === 'price_update').length,
             buyRecords: history.filter(h => h.type === 'buy').length,
             sellRecords: history.filter(h => h.type === 'sell').length
           });
@@ -16701,14 +16703,16 @@
               dailyData[date].stockChange -= op.quantity;
               dailyData[date].sellCount += 1;
               dailyData[date].profit += (op.totalRevenue || 0) - (op.quantity * (item.inventory.averageCost || 0));
-            } else if (op.type === 'price_change') {
-              // 处理价格变动记录
+            } else if (op.type === 'price_change' || op.type === 'price_update') {
+              // 处理价格变动记录（支持 price_change 和 price_update 两种类型）
+              const change = (op.newPrice || 0) - (op.oldPrice || 0);
+              const changePercent = op.oldPrice > 0 ? ((change / op.oldPrice) * 100).toFixed(2) : 0;
               console.log('💰 处理价格变动记录:', {
                 date: date,
                 oldPrice: op.oldPrice,
                 newPrice: op.newPrice,
-                change: op.change,
-                changePercent: op.changePercent
+                change: change,
+                changePercent: changePercent
               });
               dailyData[date].price = op.newPrice;
             }
@@ -17090,8 +17094,8 @@
           // 类型过滤
           if (typeFilterValue !== 'all') {
             if (typeFilterValue === 'price_change') {
-              // 价格变动记录：检查是否有价格历史数据
-              return record.type === 'price_change';
+              // 价格变动记录：支持 price_change 和 price_update 两种类型
+              return record.type === 'price_change' || record.type === 'price_update';
             }
             return record.type === typeFilterValue;
           }
@@ -17105,7 +17109,7 @@
           timeFilter: timeFilterValue,
           typeFilter: typeFilterValue,
           filteredCount: filteredHistory.length,
-          priceChangeRecords: globalItem.inventory.operationHistory.filter(r => r.type === 'price_change').length,
+          priceChangeRecords: globalItem.inventory.operationHistory.filter(r => r.type === 'price_change' || r.type === 'price_update').length,
           sampleRecords: filteredHistory.slice(0, 3).map(r => ({
             type: r.type,
             timestamp: r.timestamp,
@@ -17123,8 +17127,9 @@
           const sortedHistory = [...filteredHistory].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
           historyList.innerHTML = sortedHistory.map(record => {
             const timeAgo = this.formatTimeAgo(record.timestamp);
-            
-            if (record.type === 'price_change') {
+
+            // 价格变动记录（支持 price_change 和 price_update 两种类型）
+            if (record.type === 'price_change' || record.type === 'price_update') {
               // 价格变动记录显示 - 从 oldPrice 和 newPrice 计算 change 和 changePercent
               const oldPrice = record.oldPrice || 0;
               const newPrice = record.newPrice || 0;
@@ -17265,21 +17270,22 @@
           
           if (typeFilterValue !== 'all') {
             if (typeFilterValue === 'price_change') {
-              // 价格变动记录：检查是否有价格历史数据
-              return record.type === 'price_change';
+              // 价格变动记录：支持 price_change 和 price_update 两种类型
+              return record.type === 'price_change' || record.type === 'price_update';
             }
             return record.type === typeFilterValue;
           }
-          
+
           return true;
         });
-        
+
         // 生成CSV内容
         const csvHeader = '时间,操作类型,数量,价格,总金额,库存变化,备注\n';
         const csvRows = filteredHistory.map(record => {
           const timestamp = new Date(record.timestamp).toLocaleString('zh-CN');
-          
-          if (record.type === 'price_change') {
+
+          // 价格变动记录（支持 price_change 和 price_update 两种类型）
+          if (record.type === 'price_change' || record.type === 'price_update') {
             // 价格变动记录
             const type = '变动';
             const quantity = '-';
