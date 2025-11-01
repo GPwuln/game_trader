@@ -8855,29 +8855,92 @@
         // 检查默认用户是否存在
         const defaultUser = await this.db.get(CONFIG.STORE_USERS, CONFIG.DEFAULT_USER_ID);
 
-        // 如果不存在，则创建默认用户
+        // 如果不存在，则创建5个初始用户
         if (!defaultUser) {
-          console.log('👥 检测到首次访问，正在创建默认用户...');
+          console.log('👥 检测到首次访问，正在创建初始用户...');
           const now = Date.now();
 
-          const userData = {
-            uId: CONFIG.DEFAULT_USER_ID,
-            username: '默认用户',
-            email: '',
-            avatar: '',
-            createdAt: now,
-            lastLogin: now,
-            preferences: {
-              theme: 'auto',
-              language: 'zh-CN'
+          // 创建5个用户
+          const initialUsers = [
+            {
+              uId: 1,
+              username: '用户一',
+              email: 'user1@example.com',
+              avatar: '',
+              createdAt: now,
+              lastLogin: now,
+              preferences: {
+                theme: 'auto',
+                language: 'zh-CN'
+              },
+              version: 1,
+              synced: false
             },
-            version: 1,
-            synced: false
-          };
+            {
+              uId: 2,
+              username: '用户二',
+              email: 'user2@example.com',
+              avatar: '',
+              createdAt: now,
+              lastLogin: now,
+              preferences: {
+                theme: 'auto',
+                language: 'zh-CN'
+              },
+              version: 1,
+              synced: false
+            },
+            {
+              uId: 3,
+              username: '用户三',
+              email: 'user3@example.com',
+              avatar: '',
+              createdAt: now,
+              lastLogin: now,
+              preferences: {
+                theme: 'auto',
+                language: 'zh-CN'
+              },
+              version: 1,
+              synced: false
+            },
+            {
+              uId: 4,
+              username: '用户四',
+              email: 'user4@example.com',
+              avatar: '',
+              createdAt: now,
+              lastLogin: now,
+              preferences: {
+                theme: 'auto',
+                language: 'zh-CN'
+              },
+              version: 1,
+              synced: false
+            },
+            {
+              uId: 5,
+              username: '用户五',
+              email: 'user5@example.com',
+              avatar: '',
+              createdAt: now,
+              lastLogin: now,
+              preferences: {
+                theme: 'auto',
+                language: 'zh-CN'
+              },
+              version: 1,
+              synced: false
+            }
+          ];
 
-          await this.db.put(CONFIG.STORE_USERS, userData);
-          console.log('✅ 默认用户创建成功');
-          console.log('✅ 用户数据初始化完成');
+          // 批量创建用户
+          for (const userData of initialUsers) {
+            await this.db.put(CONFIG.STORE_USERS, userData);
+            console.log(`✅ 创建用户: ${userData.username} (uId: ${userData.uId})`);
+          }
+
+          console.log('✅ 用户数据初始化完成，已创建5个初始用户');
         }
       }
 
