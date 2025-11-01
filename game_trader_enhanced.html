@@ -11124,9 +11124,9 @@
           '#closeChart': { click: () => this.closeItemDetailModal(modal) },
           '#closeHint': { click: async () => { this.state.hideChartDeleteHint = true; await this.state.saveConfig('feature_toggles', { icons: this.state.enableIcons, toast: this.state.enableToast, chartDelete: this.state.enableChartDelete, categoryTag: this.state.enableCategoryTag, formatPrice: this.state.enableFormatPrice, hideChartDeleteHint: true }); document.getElementById('closeHint').parentElement.style.display = 'none'; } },
           '#itemCategory': { change: (e) => { const subSelect = document.getElementById('itemSubCategory'); const selectedCat = e.target.value; if (!selectedCat) { subSelect.style.display = 'none'; subSelect.innerHTML = '<option value="">无二级分类</option>'; return; } const parentCat = this.state.categories.find(c => c.name === selectedCat); if (parentCat?.subs?.length) { subSelect.innerHTML = '<option value="">无二级分类</option>' + parentCat.subs.map(sub => `<option value="${Utils.esc(sub)}">${Utils.esc(sub)}</option>`).join(''); subSelect.style.display = ''; } else { subSelect.style.display = 'none'; subSelect.innerHTML = '<option value="">无二级分类</option>'; } } },
-          '#updateCategory': { click: async () => { const selectedCat = document.getElementById('itemCategory').value; const selectedSubCat = document.getElementById('itemSubCategory').value; item.category = selectedCat || undefined; item.subCategory = selectedSubCat || undefined; await this.state.saveItemQuick(item); this.showToast('分类已更新', '🏷️', 'success', item); this.closeItemDetailModal(modal); this.renderCategories(); this.updateItemCard(item); } },
-          '#quickAddPrice': { click: this.addPriceHandler(item, modal) },
-          '#newPrice': { keypress: (e) => e.key === 'Enter' && this.addPriceHandler(item, modal)() },
+          '#updateCategory': { click: async () => { const globalItem = this.state.dataMap.get(item.name); if (!globalItem) { console.error('无法找到全局item对象:', item.name); return; } const selectedCat = document.getElementById('itemCategory').value; const selectedSubCat = document.getElementById('itemSubCategory').value; globalItem.category = selectedCat || undefined; globalItem.subCategory = selectedSubCat || undefined; await this.state.saveItemQuick(globalItem); this.showToast('分类已更新', '🏷️', 'success', globalItem); this.closeItemDetailModal(modal); this.renderCategories(); this.updateItemCard(globalItem); } },
+          '#quickAddPrice': { click: () => { const globalItem = this.state.dataMap.get(item.name); if (globalItem) { this.addPriceHandler(globalItem, modal)(); } } },
+          '#newPrice': { keypress: (e) => { if (e.key === 'Enter') { const globalItem = this.state.dataMap.get(item.name); if (globalItem) { this.addPriceHandler(globalItem, modal)(); } } } },
           '#deleteItem': { click: async () => {
             const confirmed = await this.showConfirmDialog(
               `确定要删除道具"${item.name}"吗？\n\n此操作将删除所有相关数据（持仓、历史价格、交易记录等），不可恢复！`,
@@ -17342,12 +17342,21 @@
         // 防止重复绑定事件
         if (refreshBtn && !refreshBtn._aiEventBound) {
           refreshBtn._aiEventBound = true;
-          
+
           // 刷新AI建议事件
           refreshBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            this.refreshAISuggestions(item, modal);
+
+            // 从全局dataMap获取最新的item引用
+            const globalItem = this.state.dataMap.get(item.name);
+            if (!globalItem) {
+              console.error('无法找到全局item对象:', item.name);
+              this.toast.error('操作失败：找不到道具数据', '❌');
+              return;
+            }
+
+            this.refreshAISuggestions(globalItem, modal);
           });
         }
       }
