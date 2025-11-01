@@ -8700,11 +8700,9 @@
                 stockAfter: r.afterStock || 0,
                 totalRevenue: r.type === 'sell' ? (r.totalAmount || 0) : undefined,
                 totalCost: r.type === 'buy' ? (r.totalAmount || 0) : undefined,
-                // 价格变动相关字段
+                // 价格变动相关字段（只存储 oldPrice 和 newPrice，change 和 changePercent 由前端计算）
                 oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
                 newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
-                change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
-                changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
                 userId: r.uId  // 添加用户ID字段
               }));
 
@@ -8840,10 +8838,9 @@
                 stockAfter: r.afterStock || 0,
                 totalRevenue: r.type === 'sell' ? (r.totalAmount || 0) : undefined,
                 totalCost: r.type === 'buy' ? (r.totalAmount || 0) : undefined,
+                // 只存储 oldPrice 和 newPrice，change 和 changePercent 由前端计算
                 oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
                 newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
-                change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
-                changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
                 userId: r.uId  // 添加用户ID字段
               }));
 
@@ -15188,10 +15185,9 @@
                     timestamp: r.timestamp,
                     stockAfter: r.afterStock,
                     note: r.note || '',
+                    // 只存储 oldPrice 和 newPrice
                     oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
                     newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
-                    change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
-                    changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
                     userId: r.uId
                   }))
                 };
@@ -15210,10 +15206,9 @@
                     timestamp: r.timestamp,
                     stockAfter: r.afterStock,
                     note: r.note || '',
+                    // 只存储 oldPrice 和 newPrice
                     oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
                     newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
-                    change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
-                    changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
                     userId: r.uId
                   }))
                 };
@@ -15568,10 +15563,9 @@
               timestamp: r.timestamp,
               stockAfter: r.afterStock,
               note: r.note || '',
+              // 只存储 oldPrice 和 newPrice
               oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
               newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
-              change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
-              changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
               userId: userId,
               userLabel: `角色${userId}`
             });
@@ -17131,13 +17125,18 @@
             const timeAgo = this.formatTimeAgo(record.timestamp);
             
             if (record.type === 'price_change') {
-              // 价格变动记录显示
-              const oldPriceText = `¥${Utils.formatPrice(record.oldPrice, this.state.enableFormatPrice)}`;
-              const newPriceText = `¥${Utils.formatPrice(record.newPrice, this.state.enableFormatPrice)}`;
-              const changeText = record.change > 0 ? `+¥${Utils.formatPrice(record.change, this.state.enableFormatPrice)}` : `¥${Utils.formatPrice(record.change, this.state.enableFormatPrice)}`;
-              const changePercentText = `${record.changePercent}%`;
-              const changeClass = record.change > 0 ? 'price-up' : 'price-down';
-              const changeIcon = record.change > 0 ? '📈 ' : '📉';
+              // 价格变动记录显示 - 从 oldPrice 和 newPrice 计算 change 和 changePercent
+              const oldPrice = record.oldPrice || 0;
+              const newPrice = record.newPrice || 0;
+              const change = newPrice - oldPrice;
+              const changePercent = oldPrice > 0 ? ((change / oldPrice) * 100).toFixed(2) : 0;
+
+              const oldPriceText = `¥${Utils.formatPrice(oldPrice, this.state.enableFormatPrice)}`;
+              const newPriceText = `¥${Utils.formatPrice(newPrice, this.state.enableFormatPrice)}`;
+              const changeText = change > 0 ? `+¥${Utils.formatPrice(change, this.state.enableFormatPrice)}` : `¥${Utils.formatPrice(change, this.state.enableFormatPrice)}`;
+              const changePercentText = `${changePercent}%`;
+              const changeClass = change > 0 ? 'price-up' : 'price-down';
+              const changeIcon = change > 0 ? '📈 ' : '📉';
 
               // 角色徽章（仅在全部角色视图时显示）
               const userBadge = record.userId ? `<span class="user-badge">角色${record.userId}</span>` : '';
