@@ -7718,8 +7718,24 @@
         if (!history?.length) return { avg: 0, max: { price: 0, date: '-' }, min: { price: 0, date: '-' }, count: 0 };
         const prices = history.map(h => h.close);
         const avg = prices.reduce((sum, p) => sum + p, 0) / prices.length;
-        const maxIdx = prices.indexOf(Math.max(...prices));
-        const minIdx = prices.indexOf(Math.min(...prices));
+
+        // 使用循环而不是展开运算符，避免堆栈溢出
+        let maxPrice = prices[0];
+        let minPrice = prices[0];
+        let maxIdx = 0;
+        let minIdx = 0;
+
+        for (let i = 1; i < prices.length; i++) {
+          if (prices[i] > maxPrice) {
+            maxPrice = prices[i];
+            maxIdx = i;
+          }
+          if (prices[i] < minPrice) {
+            minPrice = prices[i];
+            minIdx = i;
+          }
+        }
+
         return { avg: Math.round(avg), max: { price: prices[maxIdx], date: history[maxIdx].date }, min: { price: prices[minIdx], date: history[minIdx].date }, count: history.length };
       },
 
@@ -8776,7 +8792,64 @@
           console.error('加载数据失败:', err);
         }
       }
-      
+
+      // 只重新加载当前用户的持仓和交易记录数据，不重新加载全局道具表和价格历史
+      async loadUserDataOnly() {
+        try {
+          console.log(`📖 切换用户，只加载用户 ${this.db.currentUserId} 的持仓和交易数据...`);
+
+          // 1. 从user_holdings表加载当前用户的持仓
+          const holdings = await this.db.getByIndex(CONFIG.STORE_HOLDINGS, 'uId', this.db.currentUserId);
+          console.log(`✅ 加载了 ${holdings.length} 个持仓记录，用户ID: ${this.db.currentUserId}`);
+
+          // 2. 从records表加载当前用户的交易记录
+          const records = await this.db.getByIndex(CONFIG.STORE_RECORDS, 'uId', this.db.currentUserId);
+          console.log(`✅ 加载了 ${records.length} 条交易记录`);
+
+          // 3. 更新现有 data 中每个道具的用户相关数据（inventory）
+          this.data.forEach(item => {
+            // 查找该道具的持仓信息
+            const holding = holdings.find(h => h.itemId === item.id);
+
+            // 查找该道具的交易记录（用于operationHistory）
+            const itemRecords = records
+              .filter(r => r.itemId === item.id)
+              .sort((a, b) => a.timestamp - b.timestamp)
+              .map(r => ({
+                type: r.type,
+                quantity: r.quantity || 0,
+                price: r.price || 0,
+                timestamp: r.timestamp,
+                note: r.note || '',
+                stockAfter: r.afterStock || 0,
+                totalRevenue: r.type === 'sell' ? r.totalAmount || 0 : undefined,
+                totalCost: r.type === 'buy' ? r.totalAmount || 0 : undefined,
+                oldPrice: r.metadata?.oldPrice,
+                newPrice: r.metadata?.newPrice,
+                change: r.metadata?.change,
+                changePercent: r.metadata?.changePercent
+              }));
+
+            // 更新 inventory 数据
+            item.inventory = holding ? {
+              currentStock: holding.currentStock,
+              totalInvestment: holding.totalInvestment,
+              averageCost: holding.averageCost,
+              operationHistory: itemRecords
+            } : {
+              currentStock: 0,
+              totalInvestment: 0,
+              averageCost: 0,
+              operationHistory: itemRecords
+            };
+          });
+
+          console.log(`✅ 用户数据更新完成，共 ${this.data.length} 个道具`);
+        } catch (err) {
+          console.error('加载用户数据失败:', err);
+        }
+      }
+
       // 初始化用户数据
       async initUserData() {
         // 检查默认用户是否存在
@@ -11051,9 +11124,9 @@
           '#closeChart': { click: () => this.closeItemDetailModal(modal) },
           '#closeHint': { click: async () => { this.state.hideChartDeleteHint = true; await this.state.saveConfig('feature_toggles', { icons: this.state.enableIcons, toast: this.state.enableToast, chartDelete: this.state.enableChartDelete, categoryTag: this.state.enableCategoryTag, formatPrice: this.state.enableFormatPrice, hideChartDeleteHint: true }); document.getElementById('closeHint').parentElement.style.display = 'none'; } },
           '#itemCategory': { change: (e) => { const subSelect = document.getElementById('itemSubCategory'); const selectedCat = e.target.value; if (!selectedCat) { subSelect.style.display = 'none'; subSelect.innerHTML = '<option value="">无二级分类</option>'; return; } const parentCat = this.state.categories.find(c => c.name === selectedCat); if (parentCat?.subs?.length) { subSelect.innerHTML = '<option value="">无二级分类</option>' + parentCat.subs.map(sub => `<option value="${Utils.esc(sub)}">${Utils.esc(sub)}</option>`).join(''); subSelect.style.display = ''; } else { subSelect.style.display = 'none'; subSelect.innerHTML = '<option value="">无二级分类</option>'; } } },
-          '#updateCategory': { click: async () => { const selectedCat = document.getElementById('itemCategory').value; const selectedSubCat = document.getElementById('itemSubCategory').value; item.category = selectedCat || undefined; item.subCategory = selectedSubCat || undefined; await this.state.saveItemQuick(item); this.showToast('分类已更新', '🏷️', 'success', item); this.closeItemDetailModal(modal); this.renderCategories(); this.updateItemCard(item); } },
-          '#quickAddPrice': { click: this.addPriceHandler(item, modal) },
-          '#newPrice': { keypress: (e) => e.key === 'Enter' && this.addPriceHandler(item, modal)() },
+          '#updateCategory': { click: async () => { const globalItem = this.state.dataMap.get(item.name); if (!globalItem) { console.error('无法找到全局item对象:', item.name); return; } const selectedCat = document.getElementById('itemCategory').value; const selectedSubCat = document.getElementById('itemSubCategory').value; globalItem.category = selectedCat || undefined; globalItem.subCategory = selectedSubCat || undefined; await this.state.saveItemQuick(globalItem); this.showToast('分类已更新', '🏷️', 'success', globalItem); this.closeItemDetailModal(modal); this.renderCategories(); this.updateItemCard(globalItem); } },
+          '#quickAddPrice': { click: () => { const globalItem = this.state.dataMap.get(item.name); if (globalItem) { this.addPriceHandler(globalItem, modal)(); } } },
+          '#newPrice': { keypress: (e) => { if (e.key === 'Enter') { const globalItem = this.state.dataMap.get(item.name); if (globalItem) { this.addPriceHandler(globalItem, modal)(); } } } },
           '#deleteItem': { click: async () => {
             const confirmed = await this.showConfirmDialog(
               `确定要删除道具"${item.name}"吗？\n\n此操作将删除所有相关数据（持仓、历史价格、交易记录等），不可恢复！`,
@@ -13052,8 +13125,8 @@
         console.log(`✅ UIManager.currentUserId: ${this.currentUserId}`);
         console.log(`✅ DatabaseManager.currentUserId: ${this.state.db.currentUserId}`);
 
-        // 重新加载当前用户的数据
-        await this.state.loadData();
+        // 只重新加载当前用户的持仓和交易数据，不重新加载全局道具表和价格历史
+        await this.state.loadUserDataOnly();
 
         // 更新右上角用户按钮
         await this.updateUserButton();
@@ -15083,7 +15156,7 @@
             this.toast.warning('请输入有效数量', '⚠️');
             return;
           }
-          
+
           // 检查数量是否超过限制
           if (quantity > 100000000) {
             this.showInventoryError(quantityInput, '数量过大');
@@ -15091,7 +15164,7 @@
             this.toast.warning('购入数量不能超过1亿件', '⚠️');
             return;
           }
-          
+
           // 获取当前选中的角色ID
           const characterSelect = modal.querySelector('#characterSelect');
           const selectedValue = characterSelect ? characterSelect.value : this.currentUserId.toString();
@@ -15104,14 +15177,22 @@
             return;
           }
 
+          // 从全局dataMap获取最新的item引用，确保数据一致性
+          const globalItem = this.state.dataMap.get(item.name);
+          if (!globalItem) {
+            console.error('无法找到全局item对象:', item.name);
+            this.toast.error('操作失败：找不到道具数据', '❌');
+            return;
+          }
+
           const selectedUserId = parseInt(selectedValue);
-          this.buyStock(item, quantity, modal, selectedUserId);
+          this.buyStock(globalItem, quantity, modal, selectedUserId);
           });
         }
         
         if (sellBtn && !sellBtn._inventoryEventBound) {
           sellBtn._inventoryEventBound = true;
-          
+
           // 绑定卖出按钮事件
           sellBtn.addEventListener('click', () => {
           const quantity = parseInt(quantityInput.value);
@@ -15121,14 +15202,22 @@
             this.toast.warning('请输入有效数量', '⚠️');
             return;
           }
-          
-          if (quantity > item.inventory.currentStock) {
+
+          // 从全局dataMap获取最新的item引用，确保数据一致性
+          const globalItem = this.state.dataMap.get(item.name);
+          if (!globalItem) {
+            console.error('无法找到全局item对象:', item.name);
+            this.toast.error('操作失败：找不到道具数据', '❌');
+            return;
+          }
+
+          if (quantity > globalItem.inventory.currentStock) {
             this.showInventoryError(quantityInput, '库存不足');
-            this.toast.setCurrentItem(item);
+            this.toast.setCurrentItem(globalItem);
             this.toast.error('库存不足，无法卖出！', '🚫');
             return;
           }
-          
+
           // 获取当前选中的角色ID
           const characterSelect = modal.querySelector('#characterSelect');
           const selectedValue = characterSelect ? characterSelect.value : this.currentUserId.toString();
@@ -15136,13 +15225,13 @@
           // 检查是否选择了"全部角色"
           if (selectedValue === 'all') {
             this.showInventoryError(quantityInput, '请先选择具体角色');
-            this.toast.setCurrentItem(item);
+            this.toast.setCurrentItem(globalItem);
             this.toast.warning('请先选择具体角色后再操作', '⚠️');
             return;
           }
 
           const selectedUserId = parseInt(selectedValue);
-          this.sellStock(item, quantity, modal, selectedUserId);
+          this.sellStock(globalItem, quantity, modal, selectedUserId);
           });
         }
         
@@ -15152,22 +15241,29 @@
           btn.addEventListener('click', () => {
             chartBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
-            
+
+            // 从全局dataMap获取最新的item引用
+            const globalItem = this.state.dataMap.get(item.name);
+            if (!globalItem) {
+              console.error('无法找到全局item对象:', item.name);
+              return;
+            }
+
             // 获取当前选中的图表类型
             const activeChartTab = modal.querySelector('.chart-tab-btn.active');
             const chartType = activeChartTab ? activeChartTab.dataset.chart : 'stock';
-            
+
             const period = btn.dataset.period === 'all' ? 'all' : parseInt(btn.dataset.period);
-            
+
             // 显示对应的toast通知
-            this.toast.setCurrentItem(item);
+            this.toast.setCurrentItem(globalItem);
             const periodText = period === 'all' ? '全部数据' : `${period}天`;
             this.toast.info(`切换到${periodText}视图`, '📊');
-            
-            this.updateInventoryChart(item, period, modal, chartType);
+
+            this.updateInventoryChart(globalItem, period, modal, chartType);
           });
         });
-        
+
         // 绑定图表标签按钮
         const chartTabBtns = modal.querySelectorAll('.chart-tab-btn');
         chartTabBtns.forEach(btn => {
@@ -15175,7 +15271,15 @@
             chartTabBtns.forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             const chartType = btn.dataset.chart;
-            this.switchChartType(item, chartType, modal);
+
+            // 从全局dataMap获取最新的item引用
+            const globalItem = this.state.dataMap.get(item.name);
+            if (!globalItem) {
+              console.error('无法找到全局item对象:', item.name);
+              return;
+            }
+
+            this.switchChartType(globalItem, chartType, modal);
           });
         });
         
@@ -17238,12 +17342,21 @@
         // 防止重复绑定事件
         if (refreshBtn && !refreshBtn._aiEventBound) {
           refreshBtn._aiEventBound = true;
-          
+
           // 刷新AI建议事件
           refreshBtn.addEventListener('click', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            this.refreshAISuggestions(item, modal);
+
+            // 从全局dataMap获取最新的item引用
+            const globalItem = this.state.dataMap.get(item.name);
+            if (!globalItem) {
+              console.error('无法找到全局item对象:', item.name);
+              this.toast.error('操作失败：找不到道具数据', '❌');
+              return;
+            }
+
+            this.refreshAISuggestions(globalItem, modal);
           });
         }
       }
