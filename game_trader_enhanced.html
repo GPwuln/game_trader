@@ -8377,14 +8377,29 @@
       async saveItem(item) {
         // 将前端item数据拆分保存到新的8表结构
 
-        const itemId = item.id || await this._getNextItemId();
+        // 1. 先检查是否已存在同名物品（items表中name是唯一索引）
+        let itemId = item.id;
+        let existingItem = null;
 
-        // 1. 保存到items表（全局市场数据）
+        if (!itemId) {
+          // 通过name索引查找是否已存在该物品
+          const itemsByName = await this.getByIndex(CONFIG.STORE_ITEMS, 'name', item.name);
+          if (itemsByName && itemsByName.length > 0) {
+            existingItem = itemsByName[0];
+            itemId = existingItem.id;
+            console.log(`📌 发现已存在物品: ${item.name} (id: ${itemId})`);
+          } else {
+            itemId = await this._getNextItemId();
+            console.log(`🆕 创建新物品: ${item.name} (id: ${itemId})`);
+          }
+        }
+
+        // 2. 保存到items表（全局市场数据）
         const itemData = {
           id: itemId,
           name: item.name,
           price: item.price || 0,
-          basePrice: item.basePrice || item.price || 0,
+          basePrice: item.basePrice || item.price || (existingItem?.basePrice) || 0,
           marketTrend: this._calculateTrend(item.history || []),
           category: item.category || '未分类',
           subCategory: item.subCategory || '',
@@ -8394,7 +8409,7 @@
           supply: 0,
           demand: 0,
           totalTransactions: (item.history || []).length,
-          createdAt: item.createdAt || Date.now(),
+          createdAt: existingItem?.createdAt || item.createdAt || Date.now(),
           updatedAt: Date.now(),
           priceUpdatedAt: Date.now()
         };
