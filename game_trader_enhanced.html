@@ -8698,13 +8698,14 @@
                 timestamp: r.timestamp,
                 note: r.note || '',
                 stockAfter: r.afterStock || 0,
-                totalRevenue: r.type === 'sell' ? r.totalAmount || 0 : undefined,
-                totalCost: r.type === 'buy' ? r.totalAmount || 0 : undefined,
+                totalRevenue: r.type === 'sell' ? (r.totalAmount || 0) : undefined,
+                totalCost: r.type === 'buy' ? (r.totalAmount || 0) : undefined,
                 // 价格变动相关字段
-                oldPrice: r.metadata?.oldPrice,
-                newPrice: r.metadata?.newPrice,
-                change: r.metadata?.change,
-                changePercent: r.metadata?.changePercent
+                oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+                newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+                change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
+                changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
+                userId: r.uId  // 添加用户ID字段
               }));
 
             // 查找该道具的价格历史
@@ -8837,12 +8838,13 @@
                 timestamp: r.timestamp,
                 note: r.note || '',
                 stockAfter: r.afterStock || 0,
-                totalRevenue: r.type === 'sell' ? r.totalAmount || 0 : undefined,
-                totalCost: r.type === 'buy' ? r.totalAmount || 0 : undefined,
-                oldPrice: r.metadata?.oldPrice,
-                newPrice: r.metadata?.newPrice,
-                change: r.metadata?.change,
-                changePercent: r.metadata?.changePercent
+                totalRevenue: r.type === 'sell' ? (r.totalAmount || 0) : undefined,
+                totalCost: r.type === 'buy' ? (r.totalAmount || 0) : undefined,
+                oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+                newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+                change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
+                changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
+                userId: r.uId  // 添加用户ID字段
               }));
 
             // 更新 inventory 数据
@@ -15184,7 +15186,13 @@
                     totalCost: r.type === 'buy' ? r.totalAmount : 0,
                     totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
                     timestamp: r.timestamp,
-                    stockAfter: r.afterStock
+                    stockAfter: r.afterStock,
+                    note: r.note || '',
+                    oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+                    newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+                    change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
+                    changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
+                    userId: r.uId
                   }))
                 };
               } else {
@@ -15200,7 +15208,13 @@
                     totalCost: r.type === 'buy' ? r.totalAmount : 0,
                     totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
                     timestamp: r.timestamp,
-                    stockAfter: r.afterStock
+                    stockAfter: r.afterStock,
+                    note: r.note || '',
+                    oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+                    newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+                    change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
+                    changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
+                    userId: r.uId
                   }))
                 };
               }
@@ -15553,6 +15567,11 @@
               totalRevenue: r.type === 'sell' ? r.totalAmount : 0,
               timestamp: r.timestamp,
               stockAfter: r.afterStock,
+              note: r.note || '',
+              oldPrice: r.type === 'price_change' ? (r.metadata?.oldPrice || r.price || 0) : undefined,
+              newPrice: r.type === 'price_change' ? (r.metadata?.newPrice || r.price || 0) : undefined,
+              change: r.type === 'price_change' ? (r.metadata?.change || 0) : undefined,
+              changePercent: r.type === 'price_change' ? (r.metadata?.changePercent || 0) : undefined,
               userId: userId,
               userLabel: `角色${userId}`
             });
